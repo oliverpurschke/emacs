@@ -1,0 +1,4057 @@
+
+\renewcommand{\sfdefault}{lmss}
+\renewcommand{\ttdefault}{lmtt}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\usepackage{url}
+\usepackage[authoryear]{natbib}
+
+\makeatletter
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+% \VignetteIndexEntry{An Introduction to knitr}
+
+\makeatother
+
+\begin{document}
+
+\title{Lab report: "Phylogenetic signal in species' co-occurrence"}
+
+\author{Oliver Purschke}
+
+\maketitle
+The \textbf{knitr} package \citep{Bel10} is an alternative too
+to Sweave based on a different design with more features. This document
+is not the real vignette, but only serves as a placeholder to guide
+you to the real manuals of this package. You can find them in the
+package website: \url{http://yihui.name/knitr}%
+\footnote{e.g. the main manual: \url{https://github.com/downloads/yihui/knitr/knitr-manual.pdf}
+and the graphics manual: \url{https://github.com/downloads/yihui/knitr/knitr-graphics.pdf}%
+}, and remember to read the help pages of functions in this package.
+
+Anyway, here is a code chunk that shows you can compile vignettes
+with \textbf{knitr} as well by using a proper \textsf{Makefile} (see
+\url{http://yihui.name/knitr/demo/vignette/}):
+
+<<show-off>>=
+
+# load packages
+library(multitable)
+library(knitr)
+library(picante)
+library(adephylo)
+library(phylobase)
+library(ade4)
+library(phytools)
+library(spacodiR)
+library(caper)
+library(mvMORPH)
+
+# to do:
+
+## !!! key readings:
+# Crisp (and refs. therein), Cooper, Wiens, Losos, Brodribb, Ackerly, Agrawal etc., but also Gilbert & Webb 2007 PNAS and Silvertown 2006
+# potential questions:
+# what about the fact that niche conservatism not only is trait specific but also clade-specific (see Crisp 2012)
+# (for which traits are rates of evolution higher?? (does it only make sense for complete clades?) see Ackerly 2009 PNAS)
+# look into Mahlers SURFACE method
+# should we use two different kinds of approaches to test for signal (see Baraloto 2012 in Crisp 2012)
+# how to interprete PC-axis if there are trade-offs within the group? e.g. within leaf defense, trade-offs between chemical and physical defense
+# how to define trait syndromes?
+
+# 1) collect all trait data in one folder
+# 2) load data for analysis with colleen
+# 3) check new trait data for inconsistent names and rename according leaf trait data set (with colleen)
+# 4) merge all trait data sets into one table (~ 90-100 species)
+# - plot huge correlation table between all traits
+# 5) assign to traits groups (extra column)
+# 6) test for phylogenetic signal in all ~ 70 single traits (K, Lambda, D-statistic)
+# 7) do PCA or PCoA on groups of traits and test for signal in first axis
+# 8) test phylogenetic signal (+ means and variance) at different depths in the phylogeny (? possible for single traits)
+# 
+
+# set paths
+
+path.code.generic <- "/home/oliver/Dokumente/PhD/Code/"
+path.data.prod <- "/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/iDiv_BEF_Phylo/5_Phyl_Trait_EcoFunct/Spec_vs_Mean/Data/"
+path.data.traits <- "/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/iDiv_BEF_Phylo/2_Phylosignal/Data/Traits/"
+
+load(paste(path.data.prod,"prod.trait.Rdata", sep = ""))
+load(paste(path.data.traits,"befsignal.Rdata", sep = ""))
+
+save(befsignal, file = paste(path.data.traits,"befsignal.Rdata", sep = ""))
+
+# load leaf trait data for 125 species:
+load("/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/Helge/SYNCSA/Data/syncsa.data.125.Rdata")
+sort(rownames(syncsa.data.125$trait.125))
+
+## export phylogeny for will:
+
+bef.china.phylo.traits.46.will <- list(phy.46 = befsignal$phy.46, traits.46 = befsignal$traits.46[, c(1:119,237,seq(240,330, by = 6), 238,seq(241,330, by = 6))])
+names(bef.china.phylo.traits.46.will$traits.46)
+
+save(bef.china.phylo.traits.46.will, file = "bef.china.phylo.traits.46.will.Rdata")
+
+# try testing phylogenetic signal in multiple traits using "motmot"
+library(motmot)
+# try with 1) raw data and 2) scaled data
+# compare to the results for the respective PCs
+
+colnames(befsignal$traits.46[,c(42:51, 60,100,101)])
+
+transformPhylo.ML(data.matrix(befsignal$traits.46[,c(42:45)]), phy=multi2di(befsignal$phy.46), model="lambda")
+
+$Lambda
+
+      MLLambda   LowerCI   UpperCI
+[1,] 0.6460306 0.2778341 0.8985223
+
+##
+
+transformPhylo.ML((data.matrix(befsignal$traits.46[,c(116:118)])), phy=multi2di(befsignal$phy.46), model="lambda")
+
+
+## compare phylogenetic PCA for defense traits with 
+
+
+
+############
+# Strategy #
+############
+
+# until Wednesday:
+# ask Helge: which wood traits to take? in Karins synthesis data set, why are there only a hand full of xylem traits und 
+# in the meantime start setting up the all analysis (!!! without wood traits) for: a) different leaf traits, b) wood traits, c) root traits, and d) try with karins PCOA variables
+
+# map all traits to the set of 125 species for which most of the leaf traits are available
+# stick to nomenclature used in the phylogeny and trait data used in syncsa.125-dataset
+
+# successively add the following traits
+
+dir(path.data.traits)
+
+#############
+# add leaf thickness (in: leaftraits.individuals.meta2)
+############
+
+thick <- read.csv(paste(path.data.traits, "/leaf_thickness_leaftraits_individuals_meta2.csv", sep = ""))
+
+thick.mean <- aggregate(thick[,13:14], list(names = thick$species), unique)
+
+rownames(thick.mean) <- thick.mean[,1]
+
+dim(thick.mean)
+
+rownames(thick.mean) <- gsub(" ", "_", rownames(thick.mean))
+thick.mean[,1] <- rownames(thick.mean)
+#thick.mean <- thick.mean[,-1]
+
+# check for inconsistencies in names
+rownames(syncsa.data.125$trait.125)[which(rownames(syncsa.data.125$trait.125) %in% rownames(thick.mean) == FALSE)]
+
+# [1] "Clerodendrum_cyrtophyllum" "Quercus_phillyraeoides"  x 
+# [3] "Quercus_myrsinifolia" x     "Pourthiaea_hirsuta"  x     
+# [5] "Prunus_spinulosa" x         "Prunus_discoides" x
+
+# renaming species in thick.mean according to the six names above
+
+
+
+rownames(thick.mean)[rownames(thick.mean)=="Quercus_phillyreoides"] <- "Quercus_phillyraeoides"
+
+rownames(thick.mean)[rownames(thick.mean)=="Cyclobalanopsis_myrsinaefolia"] <- "Quercus_myrsinifolia"
+
+rownames(thick.mean)[rownames(thick.mean)=="Photinia_hirsuta"] <- "Pourthiaea_hirsuta"
+
+rownames(thick.mean)[rownames(thick.mean)=="Laurocerasus_spinulosa"] <- "Prunus_spinulosa"
+
+rownames(thick.mean)[rownames(thick.mean)=="Prunus_discoidea"] <- "Prunus_discoides"
+
+# "Clerodendrum_cyrtophyllum" not found but can be kicked out anyway as there are very few leaf data available
+
+# kick out Clerodendrum_cyrtophyllum, Photinia_glabra x, Idesia_polycarpa
+
+syncsa.data.125$trait.125 <- syncsa.data.125$trait.125[-c(61, 104 , 114),]
+
+identical(rownames(syncsa.data.125$trait.125), thick.mean)
+
+# merge leaf with thick, but put NAs were data are missing
+leaf.thick <- merge(syncsa.data.125$trait.125, thick.mean, by = 0, all = F, all.x = TRUE)
+colnames(leaf.thick)
+
+rownames(leaf.thick) <- leaf.thick[,1]
+leaf.thick <- leaf.thick[ ,-c(1,32,34)]
+
+# 
+
+##########
+# add leaf defense
+#########
+
+load("/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/David_Eichenberg_TradeOff/daviddat.Rdata")
+
+defense <- (t(daviddat$mat89$comm))
+
+sort(rownames(defense)[which(rownames(defense) %in% rownames(leaf.thick) == FALSE)])
+# the following species are davids defense data set but not in the CSP-leaf trait data set:
+
+# n - really missing in the data set
+# s - synonym, to be renamed
+
+ [1] "Acer_davidii"             n     "Ailanthus_altissima" n         
+ [3] "Castanopsis_sclerophylla" n     "Celtis_biondii"  n             
+ [5] "Choerospondias_axillaris" n     "Cinnamomum_camphora" n         
+ [7] "Cyclobalanopsis_myrsinaefolia"s "Diospyros_glaucifolia" n        
+ [9] "Distylium_buxifolium" n         "Distylium_myricoides" n        
+[11] "Elaeocarpus_glabripetalus" n    "Ficus_erecta" n                
+[13] "Idesia_polycarpa"    n          "Illicium_lanceolatum" n        
+[15] "Koelreuteria_bipinnata" n       "Machilus_leptophylla" s        
+[17] "Mahonia_bealei"    n            "Manglietia_yuyuanensis" n      
+[19] "Phoebe_bournei"  n              "Photinia_glabra"  n            
+[21] "Photinia_hirsuta"    s          "Phyllanthus_glaucus"  n        
+[23] "Pieris_japonica"  n             "Quercus_acutissima"  n         
+[25] "Quercus_fabri" n                "Quercus_phillyreoides"  s      
+[27] "Rhus_chinensis"  n              "Sapindus_mukorossi" n          
+[29] "Sapium_discolor" n              "Sapium_sebiferum"    n         
+[31] "Viburnum_setigerum" n
+
+# ! some of them are just syno
+# 1) idenfify the one that are really missing in our data set
+# 2) rename where possible
+
+rownames(defense)[rownames(defense)=="Cyclobalanopsis_myrsinaefolia"] <- "Quercus_myrsinifolia"
+rownames(defense)[rownames(defense)=="Photinia_hirsuta"] <- "Pourthiaea_hirsuta"
+rownames(defense)[rownames(defense)=="Quercus_phillyreoides"] <- "Quercus_phillyraeoides"
+
+
+sort(rownames(leaf.thick)[which(rownames(leaf.thick) %in% rownames(defense) == FALSE)])
+# for the following species there is leaf trait data for the CSP but not defense trait data:
+
+
+
+## ???!!! would it be possible to predict tann and phen based on NIRS as well as measuring toughness (at least for the set of traits that overlaps with the wood trait data??
+
+leaf.thick.def <- merge(leaf.thick, defense, by = 0, all = T)
+colnames(leaf.thick.def)
+
+## save data:
+save(leaf.thick.def, file = paste(path.data.traits, "/leaf.thick.def.Rdata", sep = ""))
+
+############
+# add life form (tree/shrub) (in: csp individual traits no lt)
+#########
+dir(path.data.traits)
+lifeform <- read.csv(paste(path.data.traits, "/life_form_CSPs_individual_traits_no_LT.csv", sep = ""))
+
+lifeform$Lifeform <- as.character(lifeform$Lifeform)
+life.mean <- aggregate(lifeform[,9:10], list(names = lifeform$Species), unique)
+
+rownames(life.mean) <- life.mean[,1]
+
+rownames(life.mean) <- gsub(" ", "_", rownames(life.mean))
+
+rownames(leaf.thick)[which(rownames(leaf.thick) %in% rownames(life.mean) == FALSE)]
+#[1] "Adinandra_millettii"  "Styrax_odoratissimus"
+
+rownames(life.mean)[rownames(life.mean)=="Adinandra_miletii"] <- "Adinandra_millettii"
+rownames(life.mean)[rownames(life.mean)=="Styrax_odoratissimum"] <- "Styrax_odoratissimus"
+
+leaf.thick.def.life <- merge(leaf.thick.def, life.mean[,1:2], by = 0, all = T)
+colnames(leaf.thick.def.life)
+
+# !!!! #########################################
+### merging not correct, check again...
+################################################
+
+save(leaf.thick.def.life, file = paste(path.data.traits, "/trait.signal.Rdata", sep = ""))
+
+
+##########
+# add woodtrait (xylem traits from Böhnke)
+##########
+
+## !!!! continue here
+
+# plan for tuesday:
+
+# first send nate my original splot proposal, what i wanted to what i want to do now!
+
+# 1) merge wood, root and karins data (1h)
+# 2) test for phylogenetic signal in all single continous traits (k and lambda)
+# 3) do pca on coarse groups (leaf, root, wood (böhnke jvs)..) -> extract axes
+# 4) do pca for finer groups of traits (subdivide leaf traits, subdivide wood traits) -> extract axis
+# 5) node wise phylogenetic structure for all single traits and PC axes within a particular trait group
+# 6) plot node-wise signal for all single groups into one plot
+
+# how to visualize the overall results:
+# for each group, either traitgram, opposing phylo co-plots, phylomorphospace (color coding clades)
+# and !!! Phylo pairs plots (see Revell) of the first axes of each trait group, respectively
+
+# what is the story: many traits, measured in situ for the same set of species
+# we could look signal in different groups of traits (but does this really relate to strategies?)
+# 1) one potential finding could be that some traits are conserved, some not.
+# are in some traits groups traits consistently conserved, but in others not. what does it tell us? and such high signal in traits that are hard measure to indicate that phylogenetic could in this case be used to detect hidden diversity (discuss with nate)
+# !!! 2) plotting phlyogeny onto different axis of differentiation together with phylogeny ...
+# if we see clusters in multivariate space (either with respect to one trait group and with respect to two trait axis) this could be interpreted as syndromes, but only if species within those  clusters are closely related (because according to Agrawal siuts of traits could covary either due to shared ancestry or adaptive convergence), so how should we interprete if two different functional axis (e.g. wook or leave) covary in multivariate space and are conserved (or not)
+# -> e.g. our novel finding could be that there clusters of species (high trait co-variance) but those species are not related , this would indicate convergent evolution ... and vice versa. 
+# ??? but how do we related this to strategies (or syndromes) could different clusters in morphospace (if they are conserved) indicating different plant functional designs (see Marks 2006 Am Nat)?? ... 
+# our asset, studies so far have only looked at single (or very few) axes of plant funcitonal differention... however, different traits/axis often covary (form a strategy) and looking at many axes in combination with phylogeny may give insight into ...
+
+# also, how to best integrate environment and biogeography and phylogenetic info.
+#(! should we include a biogeography as extra trait or rather may it as preditors (as color code) onto the morphospace)?
+                                        
+# !!! but should not overlap with helges wood leaf correlations)
+
+# or 3) getting back to Nate's simulation study. (I guess he wanted to ask why isnt phylogeny a good proxy for function, even if important traits are measured and conserved) (our data set could fit quite well here )
+
+#########
+# add root traits
+#########
+
+
+#########
+
+# add karins PCOA axis:
+# xylem
+# wood mechanics
+# leaf traits
+# 
+
+#######################################################################
+## okay, lets the steps above as I now got the big synthesis data set:
+#######################################################################
+
+# make consistent with names in syncsa-leaf trait data set
+# merge with leaf the 123 species in the leaf data set
+# but do consistency checks (particularily in wood, defense ...):
+# what do the zeros actully mean?
+# combine with bioclimatic niche traits (from Erik, but what about niche breath, range size and marginality?)
+# 
+
+traits.syn <- read.csv(paste(path.data.traits, "/Synthesis_Plant_traits_CSP.csv", sep = ""), sep = "\t")
+dim(traits.syn)
+str(traits.syn)
+
+summary(traits.syn[1:96,])
+# check the following traits (compare with original/more recent data sources):
+# kick out tough.l
+# pit (na_37), micronutrients (al ... - ... cd)
+# take from david: phen, tan, lt
+# dens (if wood density keep it)
+# skip architectural traits as well as k.leaf and k.wood (everything from ring to k.leaf)
+
+# merge with böhnke wood and eriks bioclimate variables
+
+### start with merging, based on syncsa.data.125$trait.125 (without Clerodendrum_cyrtophyllum, Photinia_glabra x, Idesia_polycarpa)
+
+leaf.thick.2 <- merge(syncsa.data.125$trait.125, thick.mean, by = 0, all = F, all.x = TRUE)
+
+rownames(leaf.thick.2) <- leaf.thick.2[,32]
+leaf.thick.2 <- leaf.thick.2[ ,-c(1,32,34)]
+
+# kick out leaf traits that were not used in böhnke JVS 
+# (before check whether those were already excluded in the data set colleen!)
+
+load("/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/iDiv_BEF_Phylo/5_Phyl_Trait_EcoFunct/Spec_vs_Mean/Data/prod.trait.Rdata")
+
+summary(prod.trait$com.25_121spec$trait.121)
+dim(prod.trait$com.25_121spec$trait.121)
+prod.trait$com.25_121spec$trait.121[,4:5]
+
+## add leaf defense (- 13.30)
+
+leaf.thick.def.2 <- merge(leaf.thick, defense, by = 0, all = F, all.x = TRUE)
+colnames(leaf.thick.def.2)
+
+rownames(leaf.thick.def.2) <- leaf.thick.def.2$Row.names
+
+# 61 of the 89 species from which defense traits are available are remaining
+
+
+# add böhnke wood traits (-14.00)
+dir(path.data.traits)
+wood96<- read.csv(paste(path.data.traits, "/Wood97species.csv", sep = ""))
+dim(wood96)
+
+rownames(wood96) <- wood96[,1]
+dim(wood96)
+rownames(wood96) <- gsub(" ", "_", rownames(wood96))
+
+sort(rownames(wood96)[which(rownames(wood96) %in% rownames(leaf.thick.def.2) == FALSE)])
+
+
+ [1] "Camellia_chekiang-oleosa"      "Choerospondias_axillaris"     
+ [3] "Clerodendrum_cyrtophyllum" x    "Cyclobalanopsis_myrsinaefolia"
+ [5] "Idesia_polycarpa"          x    "Photinia_glabra"   x           
+ [7] "Photinia_hirsuta"              "Pinus_massoniana"   x          
+ [9] "Pinus_taiwanensis"         x    "Rhododendron_latouchea"       
+[11] "Styrax_odoratissima"     
+
+
+rownames(wood96)[rownames(wood96)=="Camellia_chekiang-oleosa"] <- "Camellia_chekiangoleosa"
+rownames(wood96)[rownames(wood96)=="Cyclobalanopsis_myrsinaefolia"] <- "Quercus_myrsinifolia"
+rownames(wood96)[rownames(wood96)=="Photinia_hirsuta"] <- "Pourthiaea_hirsuta"
+rownames(wood96)[rownames(wood96)=="Rhododendron_latouchea"] <- "Rhododendron_latoucheae"
+rownames(wood96)[rownames(wood96)=="Styrax_odoratissima"] <- "Styrax_odoratissimus"
+
+wood96 <- wood96[,-c()]
+
+leaf.thick.def.wood <- merge(leaf.thick.def.2[,-1], wood96, by = 0, all = F, all.x = TRUE)
+
+colnames(leaf.thick.def.wood)
+
+rownames(leaf.thick.def.wood) <- leaf.thick.def.wood$Row.names
+
+leaf.thick.def.wood <- leaf.thick.def.wood[,-1]
+
+# 90 of the 96 species with wood traits remaining
+
+## get rid of the leaf trait not included in Böhnke 2014 JVS
+# - "Na "Zn "Pb" "Ni
+
+leaf.thick.def.wood.2 <- leaf.thick.def.wood[,-c(19,21,18,17)]
+colnames(leaf.thick.def.wood.2)[1:27]
+
+
+# add selected columns from karins synthesis data (incl. xylem, life form, evergreen, root, wood density) (-14.15)
+
+colnames(traits.syn)
+
+traits.syn.144 <- traits.syn[1:144,]
+# get rid of the second "Camellia oleifera" as this occurs twice in the data set
+
+traits.syn.144 <- traits.syn.144[-98,]
+
+rownames(traits.syn.144) <- traits.syn.144$species
+
+colnames(traits.syn.144)
+
+
+rownames(traits.syn.144) <- gsub(" ", "_", rownames(traits.syn.144))
+
+sort(rownames(leaf.thick.def.wood.2)[which(rownames(leaf.thick.def.wood.2) %in% rownames(traits.syn.144) == FALSE)])
+
+[1] "Adinandra_millettii"    "Pourthiaea_hirsuta"     "Prunus_discoides"      
+[4] "Prunus_spinulosa"       "Quercus_myrsinifolia"   "Quercus_phillyraeoides"
+[7] "Styrax_odoratissimus" 
+
+rownames(traits.syn.144)[rownames(traits.syn.144)=="Adinandra_miletii"] <- "Adinandra_millettii"
+rownames(traits.syn.144)[rownames(traits.syn.144)=="Photinia_hirsuta"] <- "Pourthiaea_hirsuta"
+rownames(traits.syn.144)[rownames(traits.syn.144)=="Prunus_discoidea"] <- "Prunus_discoides"
+rownames(traits.syn.144)[rownames(traits.syn.144)=="Laurocerasus_spinulosa"] <- "Prunus_spinulosa"
+rownames(traits.syn.144)[rownames(traits.syn.144)=="Cyclobalanopsis_myrsinaefolia"] <- "Quercus_myrsinifolia"
+rownames(traits.syn.144)[rownames(traits.syn.144)=="Quercus_phillyreoides"] <- "Quercus_phillyraeoides"
+rownames(traits.syn.144)[rownames(traits.syn.144)=="Styrax_odoratissimum"] <- "Styrax_odoratissimus"
+
+colnames(traits.syn.144)[c(2:20,53:56)]
+
+leaf.thick.def.wood.syn <- merge(leaf.thick.def.wood.2, traits.syn.144[, c(2:20,53:56)], by = 0, all = F, all.x = TRUE)
+
+dim(leaf.thick.def.wood.syn)
+
+rownames(leaf.thick.def.wood.syn) <- leaf.thick.def.wood.syn$Row.names
+leaf.thick.def.wood.syn <- leaf.thick.def.wood.syn[,-1]
+
+cor.test(leaf.thick.def.wood.syn$WD, leaf.thick.def.wood.syn$dens)
+plot(leaf.thick.def.wood.syn$WD, leaf.thick.def.wood.syn$dens)
+
+colnames(leaf.thick.def.wood.syn)
+
+leaf.thick.def.wood.syn[,148:150]
+
+# compare to some of the root trait values with original values in stefans data set
+# yes, is okay
+
+# add biogeographical traits (-14.30)
+
+biogeo <- read.table(paste(path.data.traits, "/Erik_Biogeography_traits.txt", sep = ""), head = T)
+dim(biogeo)
+
+specIDerik <- read.csv(paste(path.data.traits, "/specIDerik.csv", sep = ""))
+
+rownames(biogeo) <- biogeo$SPEC_ID
+rownames(specIDerik) <- specIDerik$ID
+
+biogeo <- merge(biogeo, specIDerik, by = 0, all = F, all.x = TRUE)
+biogeo[,c(1:2,116)]
+
+rownames(biogeo) <- biogeo$Species
+
+colnames(biogeo)
+
+biogeo <- biogeo[,-c(1,115,116)]
+
+
+sort(rownames(biogeo)[which(rownames(biogeo) %in% rownames(leaf.thick.def.wood.syn) == FALSE)])
+
+ [1] "Acer_davidii"                  "Adinandra_miletti"            
+ [3] "Camellia_chekiang-oleosa"      "Castanopsis_sclerophylla"     
+ [5] "Cephalotaxus_fortunei"         "Cerasus_campanulata"          
+ [7] "Choerospondias_axillaris"      "Cinnamomum_camphora"          
+ [9] "Cinnamomum_subavenum"          "Clerodendron_cyrtophyllum"    
+[11] "Cunninghamia_lanceolata"       "Cyclobalanopsis_myrsinaefolia"
+[13] "Diospyros_japonica"            "Diplospora_dubia"             
+[15] "Ficus_sarmentosa"              "Idesia_polycarpa"             
+[17] "Ilex micrococca"               "Ilex suaveolens"              
+[19] "Laurocerasus_spinulosa"        "Loropetalum_chinensis"        
+[21] "Photinia_glabra"               "Photinia_hirsuta"             
+[23] "Pieris japonica"               "Prunus_discoidea"             
+[25] "Raphilolepis_indica"           "Rhododendron_latouchea"       
+[27] "Rhus_chinensis"                "Sapindus saponaria"           
+[29] "Styrax wuyuanensis"            "Symplocos heishanensis"     
+
+rownames(biogeo)[rownames(biogeo)=="Adinandra_miletti"] <- "Adinandra_millettii"
+rownames(biogeo)[rownames(biogeo)=="Camellia_chekiang-oleosa"] <- "Camellia_chekiangoleosa"
+rownames(biogeo)[rownames(biogeo)=="Cinnamomum_subavenum"] <- "Cinnamomum_subavenium"
+rownames(biogeo)[rownames(biogeo)=="Cyclobalanopsis_myrsinaefolia"] <- "Quercus_myrsinifolia"
+rownames(biogeo)[rownames(biogeo)=="Ilex suaveolens"] <- "Ilex_suaveolens"
+rownames(biogeo)[rownames(biogeo)=="Laurocerasus_spinulosa"] <- "Prunus_spinulosa"
+rownames(biogeo)[rownames(biogeo)=="Loropetalum_chinensis"] <- "Loropetalum_chinense"
+rownames(biogeo)[rownames(biogeo)=="Photinia_hirsuta"] <- "Pourthiaea_hirsuta"
+rownames(biogeo)[rownames(biogeo)=="Prunus_discoidea"] <- "Prunus_discoides"
+rownames(biogeo)[rownames(biogeo)=="Raphilolepis_indica"] <- "Rhaphiolepis_indica"
+rownames(biogeo)[rownames(biogeo)=="Rhododendron_latouchea"] <- "Rhododendron_latoucheae"
+rownames(biogeo)[rownames(biogeo)=="Symplocos heishanensis"] <- "Symplocos_heishanensis"
+
+leaf.thick.def.wood.syn.biogeo <- merge(leaf.thick.def.wood.syn, biogeo, by = 0, all = F, all.x = TRUE)
+colnames(leaf.thick.def.wood.syn.biogeo)
+
+rownames(leaf.thick.def.wood.syn.biogeo) <- leaf.thick.def.wood.syn.biogeo$Row.names
+
+save(leaf.thick.def.wood.syn.biogeo, file = paste(path.data.traits, "/leaf.thick.def.wood.syn.biogeo.Rdata", sep = ""))
+
+
+## do some final checking: 
+ # e.g. is wood density in karins data (probably predicted with mice) really corresponding to the gappy measured wood density data? r = 0.75
+# further check for strange zeros and NAs
+# check some random values in the merged data set correspond to the values in the original data
+
+# lifeform: convert "shrub tree" into either shrub or tree
+
+# save this data set (122 species)
+
+# prune this data set down to a minimum set of species (~ 61 species??) 
+
+
+# set of 61 species for which defense traits are available
+leaf.thick.def.wood.syn.biogeo.61 <- leaf.thick.def.wood.syn.biogeo[!is.na(leaf.thick.def.wood.syn.biogeo[,31]), ]
+
+
+# set of 50 species for which defense and climate traits are available
+rownames(leaf.thick.def.wood.syn.biogeo.61[is.na(leaf.thick.def.wood.syn.biogeo.61[,260]), ])
+# ??!! could erik get traits for those species??
+[1] "Ilex_elmerrilliana"       "Ilex_purpurea"           
+ [3] "Ilex_wilsonii"            "Itea_chinensis"          
+ [5] "Meliosma_flexuosa"        "Quercus_phillyraeoides"  
+ [7] "Symplocos_stellaris"      "Ternstroemia_gymnanthera"
+ [9] "Vaccinium_bracteatum"     "Vaccinium_carlesii"      
+[11] "Vaccinium_mandarinorum"
+
+leaf.thick.def.wood.syn.biogeo.50 <- leaf.thick.def.wood.syn.biogeo.61[!is.na(leaf.thick.def.wood.syn.biogeo.61[,260]), ]
+
+
+# set of 48 species for which defense, climate and root traits are available
+leaf.thick.def.wood.syn.biogeo.48 <- leaf.thick.def.wood.syn.biogeo.50[!is.na(leaf.thick.def.wood.syn.biogeo.50[,150]), ]
+
+                                        
+# set of 44 species for which defense, climate, root and wood traits are available
+leaf.thick.def.wood.syn.biogeo.44 <- leaf.thick.def.wood.syn.biogeo.48[!is.na(leaf.thick.def.wood.syn.biogeo.48[,130]), ]
+
+
+## save all the single data sets
+befsignal <- list("traits.122" = leaf.thick.def.wood.syn.biogeo)
+befsignal$leaf.def <- leaf.thick.def.wood.syn.biogeo.61
+
+befsignal$leaf.def.clim <- leaf.thick.def.wood.syn.biogeo.50
+
+befsignal$leaf.def.clim.root <- leaf.thick.def.wood.syn.biogeo.48
+
+befsignal$leaf.def.clim.root.wood <- leaf.thick.def.wood.syn.biogeo.44
+
+save(befsignal, file = paste(path.data.traits, "/befsignal.Rdata", sep = ""))
+
+
+# prune phylogeny to the 44 species
+syncsa.data.125$phy.125.tree$tip.label
+
+sort(syncsa.data.125$phy.125.tree$tip.label[which(syncsa.data.125$phy.125.tree$tip.label %in% rownames(befsignal$leaf.def.clim.root.wood) == FALSE)])
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, befsignal$leaf.def.clim.root.wood)
+mat$phy
+
+befsignal$phy.44 <- mat$phy
+
+
+
+# select all continuous traits and test blombergs K
+
+traits.44.cont <- befsignal$leaf.def.clim.root.wood[,c(5:27,31:36,127:131,144,145,149:152,154:265)]
+
+
+traits.61.cont <- befsignal$leaf.def[,c(5:27,31:36)]
+
+traits.122.cont <- befsignal$traits.122[,c(5:27)]
+
+
+MultiK<- function(tre, traits){
+require(phytools)
+mat <- matrix(NA, ncol = 2, nrow = dim(traits)[2])
+colnames(mat) <- c("K","P")
+rownames(mat) <- colnames(traits)
+for (i in 1:dim(traits)[2]){
+    x <- phylosig(tre, traits[tre$tip.label,i], method="K", test=TRUE, nsim=1000)
+    mat[i,] <- round(as.numeric(x), 3)
+  }
+    mat
+}
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, traits.44.cont)
+
+pdf("phy44.pdf")
+plot(mat$phy, cex = .7)
+dev.off()
+
+mat$phy$edge.length <- mat$phy$edge.length+.001
+phylosignal(scale(log(mat$data[mat$phy$tip.label, 5])), multi2di(mat$phy))
+
+## pca on leaf traits
+pca.leaf <- rda(mat$data[,c(24,25)], scale = T)
+#summary(pca.leaf)
+#biplot(pca.leaf)
+phylosignal(pca.leaf$CA$u[mat$phy$tip.label,1], multi2di(mat$phy))
+
+
+
+
+multk <- MultiK(mat$phy, pca.leaf$CA$u[,1])
+multk
+
+write.csv(multk, file = "multk.61.csv")
+
+nam <- rownames(befsignal$leaf.def.clim.root.wood)
+write.csv(nam, file = "consensus_Spec_set_44.csv")
+
+################################################
+# the strange news: nothing seems conserved!!!
+################################################
+# systematically check the phylogenies:
+
+# plot trait values and test signal for LDMC, Toughness, Tannins, Phenolics and wood density onto the following phylogenies
+
+############################
+# 1.1) phy.44
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, traits.44.cont)
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+phylpatho <- phylo4d(mat$phy, mat$data[,c(5,22,24,25,29)])
+
+#postscript("Phylo.traits.44.eps", width = 16, height = 24, paper = "special", onefile = FALSE, horizontal = FALSE, pointsize=14)
+pdf("Phylo.traits.44.pdf", width = 16, height = 24)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/2, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data[,c(5,22,24,25,29)]))
+dev.off()
+
+multk <- MultiK(mat$phy, mat$data[,c(5,22,24,25,29)])
+multk
+
+#                   K     P
+#LDMC           0.016 0.125
+#WD             0.002 0.263
+#Phenole        0.015 0.190
+#Tannin         0.020 0.176
+#Leaf.toughness 0.006 0.216
+
+
+############################
+# 1.2) phy.61
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, traits.61.cont)
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+phylpatho <- phylo4d(mat$phy, mat$data[,c(5,22,24,25,29)])
+
+#postscript("Phylo.traits.61.eps", width = 16, height = 24, paper = "special", onefile = FALSE, horizontal = FALSE, pointsize=14)
+pdf("Phylo.traits.61.pdf", width = 16, height = 24)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/2, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data[,c(5,22,24,25,29)]))
+dev.off()
+
+multk <- MultiK(mat$phy, mat$data[,c(5,22,24,25,29)])
+multk
+
+#                   K     P
+#LDMC           0.021 0.127
+#WD             0.003 0.339
+#Phenole        0.020 0.153
+#Tannin         0.024 0.194
+#Leaf.toughness 0.008 0.204
+
+
+######################
+# 1.3) phy.122
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, traits.122.cont)
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+phylpatho <- phylo4d(mat$phy, mat$data[,c(5,22)])
+
+#postscript("Phylo.traits.44.eps", width = 16, height = 24, paper = "special", onefile = FALSE, horizontal = FALSE, pointsize=14)
+pdf("Phylo.traits.122.pdf", width = 24, height = 36)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/2, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data[,c(5,22)]))
+dev.off()
+
+multk <- MultiK(mat$phy, mat$data[,c(5,22)])
+multk
+
+#         K     P
+#LDMC 0.048 0.111
+#WD   0.008 0.265
+                                        
+######################
+# 2.1) phy.51 (only phen and tan available, ? maybe LDMC)
+load("/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/David_Eichenberg_TradeOff/daviddat.Rdata")
+
+mat <- match.phylo.data(daviddat$mat51mean$phy, t(daviddat$mat51mean$comm))
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+phylpatho <- phylo4d(mat$phy, mat$data[,c(3,4,8)])
+
+pdf("Phylo.traits.david.51.pdf", width = 16, height = 24)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/2, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data[,c(3,4,8)]))
+dev.off()
+
+multk <- MultiK(mat$phy, mat$data[,c(3,4,8)])
+multk
+
+#         K     P
+#Phen 0.850 0.002
+#Tan  0.774 0.004
+#LT   0.664 0.019
+
+##################
+# 2.2) phy.89
+mat <- match.phylo.data(daviddat$mat89$phy, t(daviddat$mat89$comm))
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+phylpatho <- phylo4d(mat$phy, mat$data[,c(3,4,8)])
+
+pdf("Phylo.traits.david.89.pdf", width = 16, height = 24)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/2, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data[,c(3,4,8)]))
+dev.off()
+
+multk <- MultiK(mat$phy, mat$data[,c(3,4,8)])
+multk
+
+#                   K     P
+#Phenole        0.030 0.148
+#Tannin         0.038 0.164
+#Leaf.toughness 0.016 0.195
+
+
+##################
+# 3.1) Schuldt 2012
+
+spec.schuldt <- c("Neolitsea_aurata", "Machilus_thunbergii", "Cinnamomum_subavenium", "Meliosma_oldhamii", "Schima_superba", "Camellia_fraterna", "Symplocos_stellaris", "Ardisia_crenata", "Eurya_rubiginosa", "Eurya_muricata", "Daphniphyllum_oldhamii", "Loropetalum_chinense", "Myrica_rubra", "Cyclobalanopsis_glauca", "Castanopsis_eyrei", "Quercus_myrsinifolia", "Lithocarpus_glaber", "Quercus_serrata", "Castanopsis_tibetana", "Castanopsis_fargesii", "Castanopsis_carlesii")
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, traits.122.cont[rownames(traits.122.cont) %in% spec.schuldt,])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+plot(mat$phy)
+
+phylpatho <- phylo4d(mat$phy, mat$data[,c(5,22)])
+
+pdf("Phylo.traits.schuldt.21.pdf", width = 16, height = 24)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/2, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data[,c(5,22)]))
+dev.off()
+
+multk <- MultiK(mat$phy, mat$data[,c(5,22)])
+multk
+#         K     P
+#LDMC 1.441 0.001
+#WD   0.694 0.047
+
+################
+# 3.2) Schuldt 2012 but also in defense traits (one species less = 21 species)
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, traits.61.cont[rownames(traits.61.cont) %in% spec.schuldt,])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+plot(mat$phy)
+
+phylpatho <- phylo4d(mat$phy, mat$data[,c(5,22,24,25,29)])
+
+pdf("Phylo.traits.schuldt.20.pdf", width = 16, height = 24)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/2, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data[,c(5,22,24,25,29)]))
+dev.off()
+
+multk <- MultiK(mat$phy, mat$data[,c(5,22,24,25,29)])
+multk
+
+#                   K     P
+#LDMC           1.229 0.001
+#WD             0.582 0.162
+#Phenole        0.466 0.380
+#Tannin         0.650 0.078
+#Leaf.toughness 0.561 0.265
+
+##
+
+# compare the values on the phylogeny for david's data with those for phy.61 # yes, ok
+# try different stategy/order to intersect data:
+# e.g. start merging wood and leaf data and test for which set of species that are expected to show high signal (LDMC, Wood density, Leaf-C content, toughness, Tannin) actually show high phylogenetic signal
+# or start with david.51 species set that showed high signal
+
+# save all single trait sets (-13.30)
+
+# leaf
+sort(rownames(defense)[which(rownames(defense) %in% rownames(traits.122.cont) == FALSE)])
+
+befsignal$defense.89 <- defense
+
+# wood
+sort(rownames(wood96)[which(rownames(wood96) %in% rownames(traits.122.cont) == FALSE)])
+
+[1] "Choerospondias_axillaris"  "Clerodendrum_cyrtophyllum"
+[3] "Idesia_polycarpa"          "Photinia_glabra"          
+[5] "Pinus_massoniana"  x        "Pinus_taiwanensis"  x
+
+rownames(wood96)[rownames(wood96)=="Styrax_odoratissima"] <- "Styrax_odoratissimus"
+befsignal$wood96 <- wood96
+
+# traits.syn.root
+befsignal$traits.143.syn.root <- traits.syn.144[, c(2:20,53:56)]
+
+befsignal$traits.143.syn.root[!is.na(befsignal$traits.143.syn.root[,20]),20:22]
+
+# biogeo
+sort(rownames(biogeo)[which(rownames(biogeo) %in% rownames(traits.122.cont) == FALSE)])
+befsignal$biogeo <- biogeo
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, befsignal$biogeo)
+
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+pca.biogeo <- rda(mat$data[,100:105], scale = T)
+phylosignal(pca.biogeo$CA$u[,1], multi2di(mat$phy))
+
+
+multk <- MultiK(mat$phy, mat$data[,21:113])
+multk
+
+# merge wood and leaf and test for signal (13.45)
+sort(rownames(befsignal$wood96)[which(rownames(befsignal$wood96) %in% rownames(befsignal$traits.122) == FALSE)])
+
+wood.leaf <- merge(befsignal$wood96, befsignal$traits.122[,2:27], by = 0, all = F)
+rownames(wood.leaf) <- wood.leaf$Row.names
+
+dim(wood.leaf)
+colnames(wood.leaf[,c(92:120)])
+
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, wood.leaf[,c(92:120)])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+multk <- MultiK(mat$phy, scale(mat$data))
+multk
+
+
+# just test in wood
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, befsignal$wood96[,c(13:23)])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+multk <- MultiK(mat$phy, mat$data)
+multk
+
+# pca on wood
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, befsignal$wood96[,c(19:22)])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+pca.biogeo <- rda(mat$data, scale = T)
+phylosignal(pca.biogeo$CA$u[,1], multi2di(mat$phy))
+
+# merge wood and defense and test for signal (14.00)
+wood.def <- merge(befsignal$wood96, befsignal$defense.89, by = 0, all = F)
+rownames(wood.def) <- wood.def$Row.names
+dim(wood.def)
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, wood.def[,c(93:102)])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+multk <- MultiK(mat$phy, mat$data)
+multk
+
+# dropping five "outlier" species:
+sort(rownames(mat$data))
+tip <- c("Idesia_polycarpa","Betula_luminifera","Liquidambar_formosana","Nyssa_sinensis","Castanopsis_fargesii")
+phy.drop <- drop.tip(mat$phy, tip)
+
+mat <- match.phylo.data(phy.drop, wood.def[,c(93:102)])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+multk <- MultiK(mat$phy, mat$data)
+multk
+
+# combine dropped trait data with leaf traits
+wood.def.leaf.drop <- merge(mat$data, befsignal$traits.122[,c(8:12,26,152)], by = 0, all = F)
+rownames(wood.def.leaf.drop) <- wood.def.leaf.drop$Row.names
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, wood.def.leaf.drop[,c(2:18)])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+multk <- MultiK(mat$phy, mat$data)
+multk
+
+### still nothing conserved
+# just for fun merge with david 51 species set
+
+defense.51 <- (t(daviddat$mat51mean$comm))
+
+sort(rownames(defense.51)[which(rownames(defense.51) %in% rownames(wood.def.leaf.drop) == FALSE)])
+
+rownames(defense.51)[rownames(defense.51)=="Cyclobalanopsis_myrsinaefolia"] <- "Quercus_myrsinifolia"
+rownames(defense.51)[rownames(defense.51)=="Photinia_hirsuta"] <- "Pourthiaea_hirsuta"
+rownames(defense.51)[rownames(defense.51)=="Quercus_phillyreoides"] <- "Quercus_phillyraeoides"
+
+# data set gets to small doesnt make sense
+
+# intersect leaf with def.51:
+
+traits.122.contdefense.51
+
+leaf.def.51 <- merge(defense.51, befsignal$traits.122[,c(8:12,26,152)], by = 0, all = F)
+rownames(leaf.def.51) <- leaf.def.51$Row.names
+# 30 species represented
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, leaf.def.51[,c(2:16)])
+mat$phy$edge.length <- mat$phy$edge.length+.001
+
+multk <- MultiK(mat$phy, mat$data)
+multk
+
+# high conservatism in defense and LDMC
+#              K     P
+#Lifeform  1.330 0.001
+#evergreen 0.738 0.153
+#Phen      0.875 0.038
+#Tan       0.848 0.042
+#LNC       0.723 0.184
+#CNR       0.777 0.083
+#LCC       0.734 0.140
+#LT        0.735 0.113
+#SLA       0.967 0.006
+#LDMC      1.478 0.001
+#C         0.634 0.411
+#N         0.731 0.156
+#CN        0.733 0.116
+#WD        0.677 0.261
+#dens      0.749 0.099
+
+
+phylpatho <- phylo4d(mat$phy, mat$data)
+
+pdf("Phylo.leaf.def.30.pdf", width = 16, height = 24)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/3, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data))
+dev.off()
+
+###
+# kick successively out some odd species from trait.61 cont.
+# 
+
+######
+
+
+plot(mat$phy, cex = .7)
+
+phylpatho <- phylo4d(mat$phy, mat$data)
+
+pdf("Phylo.wood.def.drop.pdf", width = 16, height = 24)
+phytab <- table.phylo4d(phylpatho, treetype="phylogram", show.node.label=F, box=F, ratio.tree=1/2, font=3, cex.label=1.3, cex.symbol=1.4, cex.legend = 1.1, scale = T, center = T, grid = T, var.label = colnames(mat$data))
+dev.off()
+
+# if there still is not signal in some of these groups:
+## run pca
+## try to find "odd species"
+
+# which species in phylo.traits.61 are not in phylo.leaf.def.30?:
+
+sort(rownames(traits.61.cont)[which(rownames(traits.61.cont) %in% rownames(leaf.def.51) == FALSE)])
+
+# [1] "Ardisia_crenata"             "Betula_luminifera"          
+# [3] "Camellia_fraterna"           "Castanopsis_carlesii"       
+# [5] "Castanopsis_tibetana"        "Chimonanthus_salicifolius"  
+# [7] "Cinnamomum_subavenium"       "Cleyera_japonica"           
+# [9] "Cyclobalanopsis_stewardiana" "Dendropanax_dentiger"       
+#[11] "Elaeocarpus_decipiens"       "Eurya_rubiginosa"           
+#[13] "Hydrangea_chinensis"         "Ilex_buergeri"              
+#[15] "Ilex_purpurea"               "Ilex_rotunda"               
+#[17] "Ilex_wilsonii"               "Litsea_coreana"             
+#[19] "Litsea_elongata"             "Machilus_grijsii"           
+#[21] "Machilus_pauhoi"             "Malus_leiocalyca"           
+#[23] "Myrica_rubra"                "Osmanthus_cooperi"          
+#[25] "Rhaphiolepis_indica"         "Rhododendron_latoucheae"    
+#[27] "Rhododendron_ovatum"         "Symplocos_stellaris"        
+#[29] "Symplocos_sumuntia"          "Ternstroemia_gymnanthera"   
+#[31] "Vaccinium_carlesii"
+
+sort(rownames(traits.61.cont))
+tip <- c("Ardisia_crenata","Betula_luminifera","Camellia_fraterna","Castanopsis_carlesii","Castanopsis_tibetana","Chimonanthus_salicifolius","Cinnamomum_subavenium","Cleyera_japonica","Cyclobalanopsis_stewardiana","Dendropanax_dentiger","Elaeocarpus_decipiens","Eurya_rubiginosa","Hydrangea_chinensis","Ilex_buergeri","Ilex_purpurea","Ilex_rotunda","Ilex_wilsonii","Litsea_coreana","Litsea_elongata")
+
+tip <- c("Machilus_grijsii")
+
+phy.drop <- drop.tip(syncsa.data.125$phy.125.tree, tip)
+colnames(traits.61.cont[,c(5,22,24,25,29)])
+mat <- match.phylo.data(phy.drop, traits.61.cont[,c(5,22,24,25,29)])
+mat$phy$edge.length <- mat$phy$edge.length+1
+multk <- MultiK(mat$phy, mat$data)
+multk
+
+plot(mat$phy)
+
+# including all 61 we get:
+#                   K     P
+#LDMC           0.021 0.120
+#WD             0.003 0.324
+#Phenole        0.020 0.174
+#Tannin         0.024 0.172
+#Leaf.toughness 0.008 0.205
+
+
+# exluding one of the species with extremely short branch length - "Machilus_grijsii":
+# 60 species
+                   K     P
+LDMC           1.079 0.001
+WD             0.738 0.001
+Phenole        0.808 0.001
+Tannin         0.870 0.001
+Leaf.toughness 0.631 0.009
+
+
+#################################
+# test phylogentic signal in all single continuous traits
+# 43 species (all traits including biogeography):
+
+tip <- c("Machilus_grijsii")
+phy.drop <- drop.tip(syncsa.data.125$phy.125.tree, tip)
+
+colnames(befsignal$leaf.def.clim.root.wood)
+
+colnames(befsignal$leaf.def.clim.root.wood)[c(71:130)]
+
+summary(befsignal$leaf.def.clim.root.wood[, c(221:265)])
+
+traits.44.cont <- befsignal$leaf.def.clim.root.wood[,c(2:36,40:44,46:49,51:62,65:67,69:70,71,73:77,79:87,94:96,98:100,102:111,115,119:123,125,127:132,134:135,137:145,149:152,154:265)]
+# recode leaf thickness
+
+str(traits.44.cont)
+mat <- match.phylo.data(phy.drop, traits.44.cont[,-c(2,27)])
+
+multk <- MultiK(mat$phy, mat$data)
+multk
+write.csv(multk, file = "multk.43.csv")
+
+MultiK<- function(tre, traits){
+require(phytools)
+mat <- matrix(NA, ncol = 2, nrow = dim(traits)[2])
+colnames(mat) <- c("K","P")
+rownames(mat) <- colnames(traits)
+for (i in 1:dim(traits)[2]){
+    x <- phylosig(tre, traits[tre$tip.label,i], method="K", test=TRUE, nsim=1000)
+    mat[i,] <- round(as.numeric(x), 3)
+  }
+    mat
+}
+
+# 54 species (without biogeography)
+## !!! continue here
+# 
+
+leaf.def.cont <- befsignal$leaf.def[,c(2:36,40:44,46:49,51:62,65:67,69:70,71,73:77,79:87,94:96,98:100,102:111,115,119:123,125,127:132,134:135,137:145,149:152,154:265)]
+
+# recode leaf thickness
+leaf.def.cont[,c(27)] <- as.numeric(leaf.def.cont[,c(27)])
+
+# kick out leaf margin
+leaf.def.cont <- leaf.def.cont[,-c(2)]
+
+summary(leaf.def.cont)
+colnames(leaf.def.cont)
+str(leaf.def.cont)
+
+leaf.def.wood.cont <- leaf.def.cont[!is.na(leaf.def.cont[,40]), ]
+summary(leaf.def.wood.cont)
+colnames(leaf.def.wood.cont)
+str(leaf.def.wood.cont)
+
+leaf.def.wood.root.cont <- leaf.def.wood.cont[!is.na(leaf.def.wood.cont[,116]), ]
+dim(leaf.def.wood.root.cont)
+str(leaf.def.wood.root.cont)
+colnames(leaf.def.wood.root.cont)
+summary(leaf.def.wood.root.cont)
+
+
+# kick out "Machilus_grijsii"
+
+tip <- c("Machilus_grijsii")
+phy.drop <- drop.tip(syncsa.data.125$phy.125.tree, tip)
+mat <- match.phylo.data(phy.drop, leaf.def.wood.root.cont)
+
+# identify the three missing 
+
+sort(rownames(mat$data)[which(rownames(mat$data) %in% rownames(biogeo) == FALSE)])
+write.csv(rownames(mat$data), file = "spec.46.csv")
+
+## run phylogeneitic signal test on the 46 species set (without bioclim)
+plot(mat$phy, cex = .7)
+
+multk <- MultiK(mat$phy, mat$data[,c(1:34)])
+multk
+
+write.csv(multk, file = "multk.46.csv")
+
+
+befsignal$traits.46 <- mat$data
+befsignal$phy.46 <- mat$phy
+
+leaf.def.wood.cont.43 <- befsignal$traits.46[!is.na(befsignal$traits.46[,125]), ]
+mat <- match.phylo.data(mat$phy, leaf.def.wood.cont.43)
+
+befsignal$traits.43 <- mat$data
+befsignal$phy.43 <- mat$phy
+
+### phylogenetic signal for bioclimatic variables (trait.46 with CORRECTED loropetalum chinense):
+
+MultiK<- function(tre, traits){
+require(phytools)
+mat <- matrix(NA, ncol = 2, nrow = dim(traits)[2])
+colnames(mat) <- c("K","P")
+rownames(mat) <- colnames(traits)
+for (i in 1:dim(traits)[2]){
+    x <- phylosig(tre, traits[tre$tip.label,i], method="K", test=TRUE, nsim=1000)
+    mat[i,] <- round(as.numeric(x), 3)
+  }
+    mat
+}
+
+match(befsignal$phy.46$tip.label, rownames(befsignal$traits.46))
+
+colnames(befsignal$traits.46)[120:231]
+
+befsignal$phy.46$edge.length <- befsignal$phy.46$edge.length+.001
+
+multk <- MultiK(befsignal$phy.46, befsignal$traits.46[,120:231])
+multk
+write.csv(multk, file = "multk.biogeo.46.csv")
+
+##################
+
+
+# 1) do pca.1 for the defense traits:
+pca.def <- rda(befsignal$traits.43[,c(29,30,34)], scale = T)
+summary(pca.def)
+
+befsignal$traits.43$def.pca.1 <- pca.def$CA$u[,1]
+befsignal$traits.43$def.pca.2 <- pca.def$CA$u[,2]
+befsignal$traits.43$def.pca.3 <- pca.def$CA$u[,3]
+
+phylosignal(pca.def$CA$u[,1], multi2di(mat$phy))
+# K = 0.784941; P = 0.01
+
+# 2) create traitgram for PC1.def
+vec <- befsignal$traits.43$def.pca.1
+names(vec) <- rownames(befsignal$traits.43)
+# phenogram(befsignal$phy.43, befsignal$traits.43$def.pca.2, ylim = c(-0.1794378, 0.4170834))
+
+pdf("traitgram.def.pc1.pdf", width = 10, height = 10)
+traitgram(vec, multi2di(befsignal$phy.43),method='pic')
+dev.off()
+
+# 3) do revell trait correlation plot
+
+pdf("Def.phylo.cor.pdf", width = 10, height = 10)
+tree <- befsignal$phy.43
+X <- as.matrix(befsignal$traits.43[,c(29,30,34)])
+m<-ncol(X)
+par(mfrow=c(m,m))
+par(cex=0.6)
+par(mar=c(0,0,0,0))
+par(oma=c(5,5,3,3))
+m<-ncol(X)
+for(i in 1:m) for(j in 1:m){
+  if(i==j) contMap(tree,X[,i],legend=FALSE,lwd=2,outline=F,fsize=0.5)
+  else {
+    phylomorphospace(tree,X[,c(j,i)],lwd=1,node.by.map=TRUE,axes=FALSE)
+    if(i==1) axis(side=3) # top row
+    if(i==m) axis(side=1) # first column
+    if(j==1) axis(side=2) # bottom row
+    if(j==m) axis(side=4) # last column
+  }
+}
+par(cex=0.9)
+mapply(title,xlab=colnames(X),adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+mapply(title,ylab=colnames(X)[m:1],adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+dev.off()
+
+
+
+### !!! not working
+
+# 4) Revell 
+tip.cols<-rep(c("red","blue","green"),7)
+names(tip.cols)<-tree$tip.label
+
+cols<-c(tip.cols[tree$tip.label],rep("black",tree$Nnode))
+names(cols)<-1:(length(tree$tip)+tree$Nnode)
+
+X <- befsignal$traits.43[,c(232:233)]
+
+pdf("phylomorpho.def.pdf", width = 10, height = 10)
+phylomorphospace(befsignal$phy.43,X)
+dev.off()
+
+# try for highly conserved root traits:
+
+pca.root <- rda(befsignal$traits.43[,c(116:118)], scale = T)
+summary(pca.root)
+
+befsignal$traits.43$root.pca.1 <- pca.root$CA$u[,1]
+befsignal$traits.43$root.pca.2 <- pca.root$CA$u[,2]
+befsignal$traits.43$root.pca.3 <- pca.root$CA$u[,3]
+
+phylosignal(pca.root$CA$u[,1], multi2di(mat$phy))
+# K=1.1275; P=0.001
+
+X <- befsignal$traits.43[,c(235:236)]
+
+pdf("phylomorpho.root.pdf", width = 10, height = 10)
+phylomorphospace(befsignal$phy.43, X)
+dev.off()
+
+# traitgram root
+vec <- befsignal$traits.43$root.pca.1
+names(vec) <- rownames(befsignal$traits.43)
+# phenogram(befsignal$phy.43, befsignal$traits.43$def.pca.2, ylim = c(-0.1794378, 0.4170834))
+
+pdf("traitgram.root.pc1.pdf", width = 15, height = 20)
+traitgram(vec, multi2di(befsignal$phy.43),method='pic')
+dev.off()
+
+#phylomorphospace(tree,X,control=list(col.node=cols)
+
+# 5) plot phylo-co-plot
+
+vec1 <- befsignal$traits.43$root.pca.1
+names(vec1) <- rownames(befsignal$traits.43)
+vec2 <- befsignal$traits.43$def.pca.1
+names(vec2) <- rownames(befsignal$traits.43)
+
+pdf("Defense.Root.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.43, vec2,ftype="off",sig=1,legend=30)
+ ylim<-c(1-0.12*(length(befsignal$phy.43$tip.label)-1),length(befsignal$phy.43$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.43$tip.label)), 1:length(befsignal$phy.43$tip.label),befsignal$phy.43$tip.label)
+ contMap(befsignal$phy.43,vec1,ftype="off",direction="leftwards", sig=1,legend=30)
+dev.off()
+
+# root and defense traits show both high signal but are uncorrelated
+
+
+# 6) test phylosignal in niche breath
+# all range/IQ
+
+colnames(befsignal$traits.43[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188,195,196,203,204,211,212,219,220,227,228,123,124,131,132)])
+
+# temp ranges 5-11
+colnames(befsignal$traits.43[,c(195,196,203,204,211,212,219,220,227,228,123,124,131,132)])
+
+# prec. ranges 13-19
+colnames(befsignal$traits.43[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188)])
+
+
+pca.niche.all <- rda(befsignal$traits.43[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188,195,196,203,204,211,212,219,220,227,228,123,124,131,132)], scale = T)
+summary(pca.niche.all)
+
+befsignal$traits.43$niche.all.pca.1 <- pca.niche.all$CA$u[,1]
+befsignal$traits.43$niche.all.pca.2 <- pca.niche.all$CA$u[,2]
+befsignal$traits.43$niche.all.pca.3 <- pca.niche.all$CA$u[,3]
+
+phylosignal(pca.niche.all$CA$u[,1], multi2di(mat$phy))
+k= 0.533, P=0.266
+
+##
+pca.niche.temp <- rda(befsignal$traits.43[,c(195,196,203,204,211,212,219,220,227,228,123,124,131,132)], scale = T)
+summary(pca.niche.temp)
+
+befsignal$traits.43$niche.temp.pca.1 <- pca.niche.temp$CA$u[,1]
+befsignal$traits.43$niche.temp.pca.2 <- pca.niche.temp$CA$u[,2]
+befsignal$traits.43$niche.temp.pca.3 <- pca.niche.temp$CA$u[,3]
+
+phylosignal(pca.niche.temp$CA$u[,1], multi2di(mat$phy))
+k= 0.5464, P=0.241
+
+########
+
+pca.niche.prec <- rda(befsignal$traits.43[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188)], scale = T)
+summary(pca.niche.prec)
+
+befsignal$traits.43$niche.prec.pca.1 <- pca.niche.prec$CA$u[,1]
+befsignal$traits.43$niche.prec.pca.2 <- pca.niche.prec$CA$u[,2]
+befsignal$traits.43$niche.prec.pca.3 <- pca.niche.prec$CA$u[,3]
+
+phylosignal(pca.niche.prec$CA$u[,1], multi2di(mat$phy))
+k= 0.5301, P=0.258
+
+######
+
+X <- befsignal$traits.43[,c(238:239)]
+
+pdf("phylomorpho.clim.niche.pdf", width = 10, height = 10)
+phylomorphospace(befsignal$phy.43, X)
+dev.off()
+
+###
+
+vec <- befsignal$traits.43$niche.all.pca.1
+names(vec) <- rownames(befsignal$traits.43)
+
+pdf("traitgram.clim.niche.pc1.pdf", width = 15, height = 20)
+traitgram(vec, multi2di(befsignal$phy.43),method='pic')
+dev.off()
+
+###########
+
+vec1 <- befsignal$traits.43$niche.all.pca.1
+names(vec1) <- rownames(befsignal$traits.43)
+vec2 <- befsignal$traits.43$def.pca.1
+names(vec2) <- rownames(befsignal$traits.43)
+
+pdf("Defense.ClimNiche.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.43, vec2,ftype="off",sig=1,legend=30)
+ ylim<-c(1-0.12*(length(befsignal$phy.43$tip.label)-1),length(befsignal$phy.43$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.43$tip.label)), 1:length(befsignal$phy.43$tip.label),befsignal$phy.43$tip.label)
+ contMap(befsignal$phy.43,vec1,ftype="off",direction="leftwards", sig=1,legend=30)
+dev.off()
+
+
+###
+
+vec1 <- befsignal$traits.43$niche.all.pca.1
+names(vec1) <- rownames(befsignal$traits.43)
+vec2 <- befsignal$traits.43$root.pca.1
+names(vec2) <- rownames(befsignal$traits.43)
+
+pdf("Root.ClimNiche.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.43, vec2,ftype="off",sig=1,legend=30)
+ ylim<-c(1-0.12*(length(befsignal$phy.43$tip.label)-1),length(befsignal$phy.43$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.43$tip.label)), 1:length(befsignal$phy.43$tip.label),befsignal$phy.43$tip.label)
+ contMap(befsignal$phy.43,vec1,ftype="off",direction="leftwards", sig=1,legend=30)
+dev.off()
+
+#####
+write.tree(befsignal$phy.46, file = "befchina.phy.46.tre")
+
+# plot pairwise correlations between traits
+
+
+# build trait groups
+# !!! stop at 14.00 go to nate
+
+
+# double check whether trait values in the matrices are correct
+# yes, seem to be correct!
+
+write.csv(befsignal$leaf.def.clim.root.wood, file = "traits.44.csv")
+
+##############
+# merge 46-species dataset with bioclim variables
+##############
+
+# put "symplocos" last (as last variable "coefficient of variation" is missing):
+library(reshape)
+
+## "Ilex_purpurea"
+ile.chi <- read.csv(paste(path.data.traits, "biogeo.ile.chi.csv", sep = ""), sep = "\t", dec = ",")
+ile.chi$X <- c("NU","MI","MA","RA","IQ","ME","SD","CV")
+ile.chi <- melt(ile.chi, id=c("X"))
+rownames(ile.chi) <- paste(ile.chi$X, ile.chi$variable, sep = "")
+colnames(ile.chi)[3] <- "Ilex_purpurea"
+
+## Ilex_elmerrilliana
+ile.eme <- read.csv(paste(path.data.traits, "biogeo.ile.eme.csv", sep = ""), sep = "\t", dec = ",")
+ile.eme$X <- c("NU","MI","MA","RA","IQ","ME","SD","CV")
+ile.eme <- melt(ile.eme, id=c("X"))
+rownames(ile.eme) <- paste(ile.eme$X, ile.eme$variable, sep = "")
+colnames(ile.eme)[3] <- "Ilex_elmerrilliana"
+ile.eme
+
+## Loropetalum_chinense
+lor.chi <- read.csv(paste(path.data.traits, "biogeo.lor.chi.csv", sep = ""), sep = "\t", dec = ",")
+lor.chi$X <- c("NU","MI","MA","RA","IQ","ME","SD","CV")
+lor.chi <- melt(lor.chi, id=c("X"))
+rownames(lor.chi) <- paste(lor.chi$X, lor.chi$variable, sep = "")
+colnames(lor.chi)[3] <- "Loropetalum_chinense"
+lor.chi
+
+
+## load correct loropetalum:
+
+load("/home/oliver/Downloads/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/iDiv_BEF_Phylo/2_Phylosignal/Data/Traits/befsignal.Rdata")
+
+summary(befsignal$traits.46)
+
+
+
+lor.chi.2 <- read.csv(paste(path.data.traits, "loro_stats_2.txt", sep = ""), sep = "\t", dec = ".", head = T)
+str(lor.chi.2)
+
+lor.chi.2$STATISTICS. <- c("NU","MI","MA","RA","IQ","ME","SD","CV")
+lor.chi.2 <- lor.chi.2[,-16]
+lor.chi.2 <- melt(lor.chi.2, id=c("STATISTICS."))
+
+lor.chi.2[,3] <- as.numeric(lor.chi.2[,3])
+
+rownames(lor.chi.2) <- paste(lor.chi.2$STATISTICS., lor.chi.2$variable, sep = "")
+
+colnames(lor.chi.2)[3] <- "Loropetalum_chinense"
+lor.chi.2
+######
+
+
+
+## "Symplocos_stellaris"
+sym.ste <- read.csv(paste(path.data.traits, "biogeo.sym.ste.csv", sep = ""), sep = ",", dec = ",")
+sym.ste$X <- c("NU","MI","MA","RA","IQ","ME","SD","CV")
+sym.ste <- melt(sym.ste, id=c("X"))
+rownames(sym.ste) <- paste(sym.ste$X, sym.ste$variable, sep = "")
+colnames(sym.ste)[3] <- "Symplocos_stellaris"
+sym.ste
+
+biogeo.4 <- cbind(ile.chi,ile.eme,lor.chi,sym.ste)
+colnames(biogeo.4)
+biogeo.4 <- biogeo.4[,c(3,6,9,12)]
+
+
+biogeo.4 <- t(biogeo.4)
+
+dim(befsignal$traits.46)
+colnames(befsignal$traits.46)[120:231]
+dim(biogeo.4)
+
+# add to biogeo the 3 missing and substitute Lor.chi:
+traits.46.2 <- befsignal$traits.46
+colnames(traits.46.2)[120:231]
+
+# add correct loropetalum:
+traits.46.2[(rownames(traits.46.2)=="Loropetalum_chinense"), 120:231] <- lor.chi.2[,3]
+
+#####
+
+traits.46.2[(rownames(traits.46.2)=="Loropetalum_chinense"), 120:231] <- biogeo.4[(rownames(biogeo.4)=="Loropetalum_chinense"),]
+
+
+traits.46.2[(rownames(traits.46.2)=="Ilex_purpurea"), 120:231] <- biogeo.4[(rownames(biogeo.4)=="Ilex_purpurea"),]
+
+traits.46.2[(rownames(traits.46.2)=="Ilex_elmerrilliana"), 120:231] <- biogeo.4[(rownames(biogeo.4)=="Ilex_elmerrilliana"),]
+
+traits.46.2[(rownames(traits.46.2)=="Symplocos_stellaris"), 120:231] <- biogeo.4[(rownames(biogeo.4)=="Symplocos_stellaris"),]
+
+rownames(traits.46.2)[c(11,24,26,31)]
+traits.46.2[c(11,24,26,31), 120:231]
+
+
+####
+
+befsignal$traits.46[c(11,24,26,31),120:231]
+
+# save new data
+befsignal$traits.46 <- traits.46.2
+
+# add marginality
+mar46 <- read.csv(paste(path.data.traits, "/biogeo.marginality.46.txt", sep = ""), sep = "\t")
+
+rownames(mar46) <- mar46$Species
+
+mar46 <- merge(mar46, specIDerik, by = 0, all = F, all.x = TRUE)
+
+rownames(mar46) <- mar46$Species.y
+
+mar46 <- mar46[,-c(1,4,5)]
+
+sort(rownames(mar46)[which(rownames(mar46) %in% rownames(traits.46.2) == FALSE)])
+
+rownames(mar46)[rownames(mar46)=="Adinandra_miletti"] <- "Adinandra_millettii"
+rownames(mar46)[rownames(mar46)=="Camellia_chekiang-oleosa"] <- "Camellia_chekiangoleosa"
+rownames(mar46)[rownames(mar46)=="Cinnamomum_subavenum"] <- "Cinnamomum_subavenium"
+rownames(mar46)[rownames(mar46)=="Cyclobalanopsis_myrsinaefolia"] <- "Quercus_myrsinifolia"
+rownames(mar46)[rownames(mar46)=="Loropetalum_chinensis"] <- "Loropetalum_chinense"
+rownames(mar46)[rownames(mar46)=="Photinia_hirsuta"] <- "Pourthiaea_hirsuta"
+rownames(mar46)[rownames(mar46)=="Raphilolepis_indica"] <- "Rhaphiolepis_indica"
+rownames(mar46)[rownames(mar46)=="Rhododendron_latouchea"] <- "Rhododendron_latoucheae"
+
+mat <- match.phylo.data(syncsa.data.125$phy.125.tree, mar46)
+colnames(mat$data)[1] <- "Species.ID.Erik" 
+
+match(rownames(traits.46.2), rownames(mat$data))
+
+traits.46.2$niche.margin <-  mat$data[,2]
+traits.46.2$Species.ID.Erik <-  mat$data[,1]
+
+###########################################
+# build additional groups, based on PCA: ##
+###########################################
+
+# 1) LEAF
+# 1.1) leaf morphology (PCoA)
+# 1.2) transpiration
+# 1.3) productivity
+# 1.4) elemental content
+# 1.5) defense 
+# 1.6) ALL
+# + 1.7) C & N only to compare with root C & N
+
+# 2) WOOD
+# 2.1) Rings and pores
+# 2.2) Vessels (incl. perforation plates)
+# 2.3) Rays
+# 2.4) Fibre (incl. wood density)
+# 2.5) Parenchym
+# 2.6) ALL
+
+# 3) ROOT
+
+# 4) Bioclim
+# 4.1) range size (number of grid cells)
+# 4.2) marginality
+# 4.3) niche breadth
+# 4.3.1) temp (ra, iq)
+# 4.3.2) prec (ra, iq)
+# 4.3.3) temp & prec (ra, iq)
+
+# additional single traits:
+# heigth?
+# life form?
+# evergreen?
+
+###############
+# 1) LEAF
+# 1.1) leaf morphology (PCoA)
+colnames(befsignal$traits.46[,c(1,2,26)])
+# "LM"   "LH"    "leaf.thickness"
+# ? leaf out leaf habit (LH)
+
+pca.morph <- rda(befsignal$traits.46[,c(1,2,26)], scale = T)
+summary(pca.morph)
+plot(pca.morph)
+
+befsignal$traits.46$morph.pca.1 <- pca.morph$CA$u[,1]
+befsignal$traits.46$morph.pca.2 <- pca.morph$CA$u[,2]
+befsignal$traits.46$morph.pca.3 <- pca.morph$CA$u[,3]
+
+befsignal$pca.morph <- pca.morph
+
+plot(pca.morph)
+
+#
+library(FD)
+
+morph.D <- gowdis(befsignal$traits.46[,c(1,2,26)])
+pcoa.morph <- pcoa(morph.D)
+
+befsignal$traits.46$morph.pcoa.1 <-  pcoa.morph$vectors[,1]
+befsignal$traits.46$morph.pcoa.2 <-  pcoa.morph$vectors[,2]
+befsignal$traits.46$morph.pcoa.3 <-  pcoa.morph$vectors[,3]
+
+befsignal$pcoa.morph <- pcoa.morph
+
+# pcoa
+
+# 1.2) stomata
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(19:21)])
+# "StoD" "StoL" "StoW"
+
+pca.stom <- rda(befsignal$traits.46[,c(19:21)], scale = T)
+summary(pca.stom)
+
+pdf("pca.stom.pdf")
+plot(pca.stom)
+dev.off()
+
+befsignal$traits.46$stom.pca.1 <- pca.stom$CA$u[,1]
+befsignal$traits.46$stom.pca.2 <- pca.stom$CA$u[,2]
+befsignal$traits.46$stom.pca.3 <- pca.stom$CA$u[,3]
+
+befsignal$pca.stom <- pca.stom
+
+#
+
+stom.D <- gowdis(scale(befsignal$traits.46[,c(19:21)]))
+pcoa.stom <- pcoa(stom.D)
+
+pdf("pcoa.stom.pdf")
+biplot(pcoa.stom, scale(befsignal$traits.46[,c(19:21)]))
+dev.off()
+
+befsignal$traits.46$stom.pcoa.1 <-  pcoa.stom$vectors[,1]
+befsignal$traits.46$stom.pcoa.2 <-  pcoa.stom$vectors[,2]
+befsignal$traits.46$stom.pcoa.3 <-  pcoa.stom$vectors[,3]
+
+befsignal$pcoa.stom <- pcoa.stom
+
+# 1.3) productivity
+
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(3:10)])
+# "FW"   "DW"   "LA"   "SLA"  "LDMC" "C"    "N"    "CN"  (? better to take C and N from David?)
+pca.prod <- rda(befsignal$traits.46[,c(3:10)], scale = T)
+summary(pca.prod)
+
+pdf("pca.prod.pdf")
+plot(pca.prod)
+dev.off()
+
+befsignal$traits.46$prod.pca.1 <- pca.prod$CA$u[,1]
+befsignal$traits.46$prod.pca.2 <- pca.prod$CA$u[,2]
+befsignal$traits.46$prod.pca.3 <- pca.prod$CA$u[,3]
+
+befsignal$pca.prod <- pca.prod
+
+#
+
+prod.D <- gowdis(scale(befsignal$traits.46[,c(3:10)]))
+pcoa.prod <- pcoa(prod.D)
+
+pdf("pcoa.prod.pdf")
+biplot(pcoa.prod, scale(befsignal$traits.46[,c(3:10)]))
+dev.off()
+
+befsignal$traits.46$prod.pcoa.1 <-  pcoa.prod$vectors[,1]
+befsignal$traits.46$prod.pcoa.2 <-  pcoa.prod$vectors[,2]
+befsignal$traits.46$prod.pcoa.3 <-  pcoa.prod$vectors[,3]
+
+befsignal$pcoa.prod <- pcoa.prod
+
+
+# 1.4) elemental content
+# all
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(8:18,22,23)])
+# "C"  "N"  "CN" "P"  "K"  "Ca" "Mg" "Al" "Mn" "Fe" "S"  "Cu" "Sr" (? better to take C and N from David?)
+
+pca.ele.all <- rda(befsignal$traits.46[,c(8:18,22,23)], scale = T)
+summary(pca.ele.all)
+
+pdf("pca.ele.all.pdf")
+plot(pca.ele.all)
+dev.off()
+
+befsignal$traits.46$ele.all.pca.1 <- pca.ele.all$CA$u[,1]
+befsignal$traits.46$ele.all.pca.2 <- pca.ele.all$CA$u[,2]
+befsignal$traits.46$ele.all.pca.3 <- pca.ele.all$CA$u[,3]
+
+befsignal$pca.ele.all <- pca.ele.all
+
+#
+
+ele.all.D <- gowdis(scale(befsignal$traits.46[,c(8:18,22,23)]))
+pcoa.ele.all <- pcoa(ele.all.D)
+
+pdf("pcoa.ele.all.pdf")
+biplot(pcoa.ele.all, scale(befsignal$traits.46[,c(8:18,22,23)]))
+dev.off()
+
+befsignal$traits.46$ele.all.pcoa.1 <-  pcoa.ele.all$vectors[,1]
+befsignal$traits.46$ele.all.pcoa.2 <-  pcoa.ele.all$vectors[,2]
+befsignal$traits.46$ele.all.pcoa.3 <-  pcoa.ele.all$vectors[,3]
+
+befsignal$pcoa.ele.all <- pcoa.ele.all
+
+##
+
+# without c and n
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(11:18,22,23)])
+# "P"  "K"  "Ca" "Mg" "Al" "Mn" "Fe" "S"  "Cu" "Sr"
+
+pca.ele.no.cn <- rda(befsignal$traits.46[,c(11:18,22,23)], scale = T)
+summary(pca.ele.no.cn)
+
+pdf("pca.ele.no.cn.pdf")
+plot(pca.ele.no.cn)
+dev.off()
+
+befsignal$traits.46$ele.no.cn.pca.1 <- pca.ele.no.cn$CA$u[,1]
+befsignal$traits.46$ele.no.cn.pca.2 <- pca.ele.no.cn$CA$u[,2]
+befsignal$traits.46$ele.no.cn.pca.3 <- pca.ele.no.cn$CA$u[,3]
+
+befsignal$pca.ele.no.cn <- pca.ele.no.cn
+
+#
+
+ele.no.cn.D <- gowdis(scale(befsignal$traits.46[,c(11:18,22,23)]))
+pcoa.ele.no.cn <- pcoa(ele.no.cn.D)
+
+pdf("pcoa.ele.no.cn.pdf")
+biplot(pcoa.ele.no.cn, scale(befsignal$traits.46[,c(11:18,22,23)]))
+dev.off()
+
+befsignal$traits.46$ele.no.cn.pcoa.1 <-  pcoa.ele.no.cn$vectors[,1]
+befsignal$traits.46$ele.no.cn.pcoa.2 <-  pcoa.ele.no.cn$vectors[,2]
+befsignal$traits.46$ele.no.cn.pcoa.3 <-  pcoa.ele.no.cn$vectors[,3]
+
+befsignal$pcoa.ele.no.cn <- pcoa.ele.no.cn
+
+# only micronutrients:
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(13:18,22,23)])
+# "Ca" "Mg" "Al" "Mn" "Fe" "S"  "Cu" "Sr"
+
+pca.ele.micro <- rda(befsignal$traits.46[,c(13:18,22,23)], scale = T)
+summary(pca.ele.micro)
+
+pdf("pca.ele.micro.pdf")
+plot(pca.ele.micro)
+dev.off()
+
+befsignal$traits.46$ele.micro.pca.1 <- pca.ele.micro$CA$u[,1]
+befsignal$traits.46$ele.micro.pca.2 <- pca.ele.micro$CA$u[,2]
+befsignal$traits.46$ele.micro.pca.3 <- pca.ele.micro$CA$u[,3]
+
+befsignal$pca.ele.micro <- pca.ele.micro
+
+#
+
+ele.micro.D <- gowdis(scale(befsignal$traits.46[,c(13:18,22,23)]))
+pcoa.ele.micro <- pcoa(ele.micro.D)
+
+pdf("pcoa.ele.micro.pdf")
+biplot(pcoa.ele.micro, scale(befsignal$traits.46[,c(13:18,22,23)]))
+dev.off()
+
+befsignal$traits.46$ele.micro.pcoa.1 <-  pcoa.ele.micro$vectors[,1]
+befsignal$traits.46$ele.micro.pcoa.2 <-  pcoa.ele.micro$vectors[,2]
+befsignal$traits.46$ele.micro.pcoa.3 <-  pcoa.ele.micro$vectors[,3]
+
+befsignal$pcoa.ele.micro <- pcoa.ele.micro
+
+
+# 1.5) defense (? separate chem from phys. defense (and add SLA to phys. def. (see Pearse 2012)))
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(29,30,34)])
+# "Phenole" "Tannin"  "Leaf.toughness"
+
+pca.def <- rda(befsignal$traits.46[,c(29,30,34)], scale = T)
+summary(pca.def)
+
+pdf("pca.def.pdf")
+plot(pca.def)
+dev.off()
+
+befsignal$traits.46$def.pca.1 <- pca.def$CA$u[,1]
+befsignal$traits.46$def.pca.2 <- pca.def$CA$u[,2]
+befsignal$traits.46$def.pca.3 <- pca.def$CA$u[,3]
+
+befsignal$pca.def <- pca.def
+
+#
+
+def.D <- gowdis(scale(befsignal$traits.46[,c(29,30,34)]))
+pcoa.def <- pcoa(def.D)
+
+pdf("pcoa.def.pdf")
+biplot(pcoa.def, scale(befsignal$traits.46[,c(29,30,34)]))
+dev.off()
+
+befsignal$traits.46$def.pcoa.1 <-  pcoa.def$vectors[,1]
+befsignal$traits.46$def.pcoa.2 <-  pcoa.def$vectors[,2]
+befsignal$traits.46$def.pcoa.3 <-  pcoa.def$vectors[,3]
+
+befsignal$pcoa.def <- pcoa.def
+
+
+# 1.6) ALL
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(1,2,26, 19:21, 3:10, 11:18,22,23, 29,30,34)])
+#[1] "LM"             "LH"             "leaf.thickness" "StoD"          
+# [5] "StoL"           "StoW"           "FW"             "DW"            
+# [9] "LA"             "SLA"            "LDMC"           "C"             
+#[13] "N"              "CN"             "P"              "K"             
+#[17] "Ca"             "Mg"             "Al"             "Mn"            
+#[21] "Fe"             "S"              "Cu"             "Sr"            
+#[25] "Phenole"        "Tannin"         "Leaf.toughness"
+
+pca.leaf.all <- rda(befsignal$traits.46[,c(1,2,26, 19:21, 3:10, 11:18,22,23, 29,30,34)], scale = T)
+summary(pca.leaf.all)
+
+pdf("pca.leaf.all.pdf")
+plot(pca.leaf.all)
+dev.off()
+
+befsignal$traits.46$leaf.all.pca.1 <- pca.leaf.all$CA$u[,1]
+befsignal$traits.46$leaf.all.pca.2 <- pca.leaf.all$CA$u[,2]
+befsignal$traits.46$leaf.all.pca.3 <- pca.leaf.all$CA$u[,3]
+
+befsignal$pca.leaf.all <- pca.leaf.all
+
+#
+
+leaf.all.D <- gowdis(scale(befsignal$traits.46[,c(1,2,26, 19:21, 3:10, 11:18,22,23, 29,30,34)]))
+pcoa.leaf.all <- pcoa(leaf.all.D)
+
+pdf("pcoa.leaf.all.pdf")
+biplot(pcoa.leaf.all, scale(befsignal$traits.46[,c(1,2,26, 19:21, 3:10, 11:18,22,23, 29,30,34)]))
+dev.off()
+
+befsignal$traits.46$leaf.all.pcoa.1 <-  pcoa.leaf.all$vectors[,1]
+befsignal$traits.46$leaf.all.pcoa.2 <-  pcoa.leaf.all$vectors[,2]
+befsignal$traits.46$leaf.all.pcoa.3 <-  pcoa.leaf.all$vectors[,3]
+
+befsignal$pcoa.leaf.all <- pcoa.leaf.all
+
+# 1.7) C & N
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(8:10)])
+# "C"  "N"  "CN"
+
+pca.leaf.cn <- rda(befsignal$traits.46[,c(8:10)], scale = T)
+summary(pca.leaf.cn)
+
+pdf("pca.leaf.cn.pdf")
+plot(pca.leaf.cn)
+dev.off()
+
+befsignal$traits.46$leaf.cn.pca.1 <- pca.leaf.cn$CA$u[,1]
+befsignal$traits.46$leaf.cn.pca.2 <- pca.leaf.cn$CA$u[,2]
+befsignal$traits.46$leaf.cn.pca.3 <- pca.leaf.cn$CA$u[,3]
+
+befsignal$pca.leaf.cn <- pca.leaf.cn
+
+#
+library(FD)
+leaf.cn.D <- gowdis(scale(befsignal$traits.46[,c(8:10)]))
+pcoa.leaf.cn <- pcoa(leaf.cn.D)
+
+pdf("pcoa.leaf.cn.pdf")
+biplot(pcoa.leaf.cn, scale(befsignal$traits.46[,c(8:10)]))
+dev.off()
+
+befsignal$traits.46$leaf.cn.pcoa.1 <-  pcoa.leaf.cn$vectors[,1]
+befsignal$traits.46$leaf.cn.pcoa.2 <-  pcoa.leaf.cn$vectors[,2]
+befsignal$traits.46$leaf.cn.pcoa.3 <-  pcoa.leaf.cn$vectors[,3]
+
+befsignal$pcoa.leaf.cn <- pcoa.leaf.cn
+
+
+# 2) WOOD
+# 2.1) Rings and pores
+
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(35:39)])
+# "X1" "X2" "X3" "X4" "X5"
+
+pca.wood.ring.pore <- rda(befsignal$traits.46[,c(35:39)], scale = T)
+summary(pca.wood.ring.pore)
+
+pdf("pca.wood.ring.pore.pdf")
+plot(pca.wood.ring.pore)
+dev.off()
+
+befsignal$traits.46$wood.ring.pore.pca.1 <- pca.wood.ring.pore$CA$u[,1]
+befsignal$traits.46$wood.ring.pore.pca.2 <- pca.wood.ring.pore$CA$u[,2]
+befsignal$traits.46$wood.ring.pore.pca.3 <- pca.wood.ring.pore$CA$u[,3]
+
+befsignal$pca.wood.ring.pore <- pca.wood.ring.pore
+
+#
+
+wood.ring.pore.D <- gowdis(scale(befsignal$traits.46[,c(35:39)]))
+pcoa.wood.ring.pore <- pcoa(wood.ring.pore.D)
+
+pdf("pcoa.wood.ring.pore.pdf")
+biplot(pcoa.wood.ring.pore, scale(befsignal$traits.46[,c(35:39)]))
+dev.off()
+
+befsignal$traits.46$wood.ring.pore.pcoa.1 <-  pcoa.wood.ring.pore$vectors[,1]
+befsignal$traits.46$wood.ring.pore.pcoa.2 <-  pcoa.wood.ring.pore$vectors[,2]
+befsignal$traits.46$wood.ring.pore.pcoa.3 <-  pcoa.wood.ring.pore$vectors[,3]
+
+befsignal$pcoa.wood.ring.pore <- pcoa.wood.ring.pore
+
+
+# 2.2) Vessels (incl. perforation plates)
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(40:51,52:57,59,60,100,101)])
+#  [1] "X7"      "X8"      "X9"      "X10"     "X12"     "X13"     "X14"    
+# [8] "X15"     "X16"     "X17"     "X18"     "X19"     "X30"     "X31"    
+#[15] "X32"     "X33"     "X36"     "X37"     "X56"     "X57"     "Gef_Lae"
+#[22] "Tan_Dur"
+
+pca.wood.vessel <- rda(befsignal$traits.46[,c(40:51,52:57,59,60,100,101)], scale = T)
+summary(pca.wood.vessel)
+
+pdf("pca.wood.vessel.pdf")
+plot(pca.wood.vessel)
+dev.off()
+
+befsignal$traits.46$wood.vessel.pca.1 <- pca.wood.vessel$CA$u[,1]
+befsignal$traits.46$wood.vessel.pca.2 <- pca.wood.vessel$CA$u[,2]
+befsignal$traits.46$wood.vessel.pca.3 <- pca.wood.vessel$CA$u[,3]
+
+befsignal$pca.wood.vessel <- pca.wood.vessel
+
+#
+
+wood.vessel.D <- gowdis(scale(befsignal$traits.46[,c(40:51,52:57,59,60,100,101)]))
+pcoa.wood.vessel <- pcoa(wood.vessel.D)
+
+pdf("pcoa.wood.vessel.pdf")
+biplot(pcoa.wood.vessel, scale(befsignal$traits.46[,c(40:51,52:57,59,60,100,101)]))
+dev.off()
+
+befsignal$traits.46$wood.vessel.pcoa.1 <-  pcoa.wood.vessel$vectors[,1]
+befsignal$traits.46$wood.vessel.pcoa.2 <-  pcoa.wood.vessel$vectors[,2]
+befsignal$traits.46$wood.vessel.pcoa.3 <-  pcoa.wood.vessel$vectors[,3]
+
+befsignal$pcoa.wood.vessel <- pcoa.wood.vessel
+
+
+# 2.3) Rays
+
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(79:91,99)])
+#  [1] "X96"     "X97"     "X98"     "X100"    "X101"    "X102"    "X103"   
+# [8] "X104"    "X105"    "X106"    "X107"    "X108"    "X109"    "Str_Anz"
+
+pca.wood.ray <- rda(befsignal$traits.46[,c(79:91,99)], scale = T)
+summary(pca.wood.ray)
+
+pdf("pca.wood.ray.pdf")
+plot(pca.wood.ray)
+dev.off()
+
+befsignal$traits.46$wood.ray.pca.1 <- pca.wood.ray$CA$u[,1]
+befsignal$traits.46$wood.ray.pca.2 <- pca.wood.ray$CA$u[,2]
+befsignal$traits.46$wood.ray.pca.3 <- pca.wood.ray$CA$u[,3]
+
+befsignal$pca.wood.ray <- pca.wood.ray
+
+#
+
+wood.ray.D <- gowdis(scale(befsignal$traits.46[,c(79:91,99)]))
+pcoa.wood.ray <- pcoa(wood.ray.D)
+
+pdf("pcoa.wood.ray.pdf")
+biplot(pcoa.wood.ray, scale(befsignal$traits.46[,c(79:91,99)]))
+dev.off()
+
+befsignal$traits.46$wood.ray.pcoa.1 <-  pcoa.wood.ray$vectors[,1]
+befsignal$traits.46$wood.ray.pcoa.2 <-  pcoa.wood.ray$vectors[,2]
+befsignal$traits.46$wood.ray.pcoa.3 <-  pcoa.wood.ray$vectors[,3]
+
+befsignal$pcoa.wood.ray <- pcoa.wood.ray
+
+# 2.4) Fibre (incl. wood density)
+
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(62:66,68:70,24)])
+# "X61" "X62" "X63" "X64" "X65" "X68" "X69" "X70" "WD"
+
+pca.wood.fibre <- rda(befsignal$traits.46[,c(62:66,68:70,24)], scale = T)
+summary(pca.wood.fibre)
+
+pdf("pca.wood.fibre.pdf")
+plot(pca.wood.fibre)
+dev.off()
+
+befsignal$traits.46$wood.fibre.pca.1 <- pca.wood.fibre$CA$u[,1]
+befsignal$traits.46$wood.fibre.pca.2 <- pca.wood.fibre$CA$u[,2]
+befsignal$traits.46$wood.fibre.pca.3 <- pca.wood.fibre$CA$u[,3]
+
+befsignal$pca.wood.fibre <- pca.wood.fibre
+
+#
+
+wood.fibre.D <- gowdis(scale(befsignal$traits.46[,c(62:66,68:70,24)]))
+pcoa.wood.fibre <- pcoa(wood.fibre.D)
+
+pdf("pcoa.wood.fibre.pdf")
+biplot(pcoa.wood.fibre, scale(befsignal$traits.46[,c(62:66,68:70,24)]))
+dev.off()
+
+befsignal$traits.46$wood.fibre.pcoa.1 <-  pcoa.wood.fibre$vectors[,1]
+befsignal$traits.46$wood.fibre.pcoa.2 <-  pcoa.wood.fibre$vectors[,2]
+befsignal$traits.46$wood.fibre.pcoa.3 <-  pcoa.wood.fibre$vectors[,3]
+
+befsignal$pcoa.wood.fibre <- pcoa.wood.fibre
+
+# 2.5) Parenchyma
+
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(71:77)])
+# "X75" "X76" "X77" "X78" "X79" "X86" "X87"
+
+pca.wood.paren <- rda(befsignal$traits.46[,c(71:77)], scale = T)
+summary(pca.wood.paren)
+
+pdf("pca.wood.paren.pdf")
+plot(pca.wood.paren)
+dev.off()
+
+befsignal$traits.46$wood.paren.pca.1 <- pca.wood.paren$CA$u[,1]
+befsignal$traits.46$wood.paren.pca.2 <- pca.wood.paren$CA$u[,2]
+befsignal$traits.46$wood.paren.pca.3 <- pca.wood.paren$CA$u[,3]
+
+befsignal$pca.wood.paren <- pca.wood.paren
+
+#
+
+wood.paren.D <- gowdis(scale(befsignal$traits.46[,c(71:77)]))
+pcoa.wood.paren <- pcoa(wood.paren.D)
+
+pdf("pcoa.wood.paren.pdf")
+biplot(pcoa.wood.paren, scale(befsignal$traits.46[,c(71:77)]))
+dev.off()
+
+befsignal$traits.46$wood.paren.pcoa.1 <-  pcoa.wood.paren$vectors[,1]
+befsignal$traits.46$wood.paren.pcoa.2 <-  pcoa.wood.paren$vectors[,2]
+befsignal$traits.46$wood.paren.pcoa.3 <-  pcoa.wood.paren$vectors[,3]
+
+befsignal$pcoa.wood.paren <- pcoa.wood.paren
+
+# 2.6) ALL
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(35:39, 40:51,52:57,59,60,100,101, 79:91,99, 62:66,68:70,24, 71:77)])
+# 
+
+pca.wood.all <- rda(befsignal$traits.46[,c(35:39, 40:51,52:57,59,60,100,101, 79:91,99, 62:66,68:70,24, 71:77)], scale = T)
+summary(pca.wood.all)
+
+pdf("pca.wood.all.pdf")
+plot(pca.wood.all)
+dev.off()
+
+befsignal$traits.46$wood.all.pca.1 <- pca.wood.all$CA$u[,1]
+befsignal$traits.46$wood.all.pca.2 <- pca.wood.all$CA$u[,2]
+befsignal$traits.46$wood.all.pca.3 <- pca.wood.all$CA$u[,3]
+
+befsignal$pca.wood.all <- pca.wood.all
+
+#
+
+wood.all.D <- gowdis(scale(befsignal$traits.46[,c(35:39, 40:51,52:57,59,60,100,101, 79:91,99, 62:66,68:70,24, 71:77)]))
+pcoa.wood.all <- pcoa(wood.all.D)
+
+pdf("pcoa.wood.all.pdf")
+biplot(pcoa.wood.all, scale(befsignal$traits.46[,c(35:39, 40:51,52:57,59,60,100,101, 79:91,99, 62:66,68:70,24, 71:77)]))
+dev.off()
+
+befsignal$traits.46$wood.all.pcoa.1 <-  pcoa.wood.all$vectors[,1]
+befsignal$traits.46$wood.all.pcoa.2 <-  pcoa.wood.all$vectors[,2]
+befsignal$traits.46$wood.all.pcoa.3 <-  pcoa.wood.all$vectors[,3]
+
+befsignal$pcoa.wood.all <- pcoa.wood.all
+
+## wood.boehn.wd
+
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(35:51, 79:82,84,99:101,24)])
+# 
+
+pca.wood.boehn.wd <- rda(befsignal$traits.46[,c(35:51, 79:82,84,99:101,24)], scale = T)
+summary(pca.wood.boehn.wd)
+
+pdf("pca.wood.boehn.wd.pdf")
+plot(pca.wood.boehn.wd)
+dev.off()
+
+befsignal$traits.46$wood.boehn.wd.pca.1 <- pca.wood.boehn.wd$CA$u[,1]
+befsignal$traits.46$wood.boehn.wd.pca.2 <- pca.wood.boehn.wd$CA$u[,2]
+befsignal$traits.46$wood.boehn.wd.pca.3 <- pca.wood.boehn.wd$CA$u[,3]
+
+befsignal$pca.wood.boehn.wd <- pca.wood.boehn.wd
+
+#
+
+wood.boehn.wd.D <- gowdis(scale(befsignal$traits.46[,c(35:51, 79:82,84,99:101,24)]))
+pcoa.wood.boehn.wd <- pcoa(wood.boehn.wd.D)
+
+pdf("pcoa.wood.boehn.wd.pdf")
+biplot(pcoa.wood.boehn.wd, scale(befsignal$traits.46[,c(35:51, 79:82,84,99:101,24)]))
+dev.off()
+
+befsignal$traits.46$wood.boehn.wd.pcoa.1 <-  pcoa.wood.boehn.wd$vectors[,1]
+befsignal$traits.46$wood.boehn.wd.pcoa.2 <-  pcoa.wood.boehn.wd$vectors[,2]
+befsignal$traits.46$wood.boehn.wd.pcoa.3 <-  pcoa.wood.boehn.wd$vectors[,3]
+
+befsignal$pcoa.wood.boehn.wd <- pcoa.wood.boehn.wd
+
+# 3) ROOT
+
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46[,c(116:118)])
+# 
+
+pca.root <- rda(befsignal$traits.46[,c(116:118)], scale = T)
+summary(pca.root)
+
+pdf("pca.root.pdf")
+plot(pca.root)
+dev.off()
+
+befsignal$traits.46$root.pca.1 <- pca.root$CA$u[,1]
+befsignal$traits.46$root.pca.2 <- pca.root$CA$u[,2]
+befsignal$traits.46$root.pca.3 <- pca.root$CA$u[,3]
+
+befsignal$pca.root <- pca.root
+
+#
+
+root.D <- gowdis(scale(befsignal$traits.46[,c(116:118)]))
+pcoa.root <- pcoa(root.D)
+
+pdf("pcoa.root.pdf")
+biplot(pcoa.root, scale(befsignal$traits.46[,c(116:118)]))
+dev.off()
+
+befsignal$traits.46$root.pcoa.1 <-  pcoa.root$vectors[,1]
+befsignal$traits.46$root.pcoa.2 <-  pcoa.root$vectors[,2]
+befsignal$traits.46$root.pcoa.3 <-  pcoa.root$vectors[,3]
+
+befsignal$pcoa.root <- pcoa.root
+
+# 4) Bioclim
+# 4.1) range size (number of grid cells)
+#okay
+# 4.2) marginality
+#okay
+
+# 4.3) niche breadth
+
+# 4.3.1) temp (ra, iq)
+colnames(befsignal$traits.46[,c(195,196,203,204,211,212,219,220,227,228,123,124,131,132)])
+# 
+
+pca.nb.temp <- rda(befsignal$traits.46[,c(195,196,203,204,211,212,219,220,227,228,123,124,131,132)], scale = T)
+summary(pca.nb.temp)
+
+pdf("pca.nb.temp.pdf")
+plot(pca.nb.temp)
+dev.off()
+
+befsignal$traits.46$nb.temp.pca.1 <- pca.nb.temp$CA$u[,1]
+befsignal$traits.46$nb.temp.pca.2 <- pca.nb.temp$CA$u[,2]
+befsignal$traits.46$nb.temp.pca.3 <- pca.nb.temp$CA$u[,3]
+
+befsignal$pca.nb.temp <- pca.nb.temp
+
+#
+library(FD)
+nb.temp.D <- gowdis(scale(befsignal$traits.46[,c(195,196,203,204,211,212,219,220,227,228,123,124,131,132)]))
+pcoa.nb.temp <- pcoa(nb.temp.D)
+
+pdf("pcoa.nb.temp.pdf")
+biplot(pcoa.nb.temp, scale(befsignal$traits.46[,c(195,196,203,204,211,212,219,220,227,228,123,124,131,132)]))
+dev.off()
+
+befsignal$traits.46$nb.temp.pcoa.1 <-  pcoa.nb.temp$vectors[,1]
+befsignal$traits.46$nb.temp.pcoa.2 <-  pcoa.nb.temp$vectors[,2]
+befsignal$traits.46$nb.temp.pcoa.3 <-  pcoa.nb.temp$vectors[,3]
+
+befsignal$pcoa.nb.temp <- pcoa.nb.temp
+
+# 4.3.2) prec (ra, iq)
+colnames(befsignal$traits.46[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188)])
+
+pca.nb.prec <- rda(befsignal$traits.46[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188)], scale = T)
+summary(pca.nb.prec)
+
+pdf("pca.nb.prec.pdf")
+plot(pca.nb.prec)
+dev.off()
+
+befsignal$traits.46$nb.prec.pca.1 <- pca.nb.prec$CA$u[,1]
+befsignal$traits.46$nb.prec.pca.2 <- pca.nb.prec$CA$u[,2]
+befsignal$traits.46$nb.prec.pca.3 <- pca.nb.prec$CA$u[,3]
+
+befsignal$pca.nb.prec <- pca.nb.prec
+
+#
+
+nb.prec.D <- gowdis(scale(befsignal$traits.46[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188)]))
+pcoa.nb.prec <- pcoa(nb.prec.D)
+
+pdf("pcoa.nb.prec.pdf")
+biplot(pcoa.nb.prec, scale(befsignal$traits.46[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188)]))
+dev.off()
+
+befsignal$traits.46$nb.prec.pcoa.1 <-  pcoa.nb.prec$vectors[,1]
+befsignal$traits.46$nb.prec.pcoa.2 <-  pcoa.nb.prec$vectors[,2]
+befsignal$traits.46$nb.prec.pcoa.3 <-  pcoa.nb.prec$vectors[,3]
+
+befsignal$pcoa.nb.prec <- pcoa.nb.prec
+
+# 4.3.3) temp & prec (ra, iq)
+colnames(befsignal$traits.46[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188,195,196,203,204,211,212,219,220,227,228,123,124,131,132)])
+
+pca.nb.temp.prec <- rda(befsignal$traits.46[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188,195,196,203,204,211,212,219,220,227,228,123,124,131,132)], scale = T)
+summary(pca.nb.temp.prec)
+
+pdf("pca.nb.temp.prec.pdf")
+plot(pca.nb.temp.prec)
+dev.off()
+
+befsignal$traits.46$nb.temp.prec.pca.1 <- pca.nb.temp.prec$CA$u[,1]
+befsignal$traits.46$nb.temp.prec.pca.2 <- pca.nb.temp.prec$CA$u[,2]
+befsignal$traits.46$nb.temp.prec.pca.3 <- pca.nb.temp.prec$CA$u[,3]
+
+befsignal$pca.nb.temp.prec <- pca.nb.temp.prec
+
+#
+
+nb.temp.prec.D <- gowdis(scale(befsignal$traits.46[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188,195,196,203,204,211,212,219,220,227,228,123,124,131,132)]))
+pcoa.nb.temp.prec <- pcoa(nb.temp.prec.D)
+
+pdf("pcoa.nb.temp.prec.pdf")
+biplot(pcoa.nb.temp.prec, scale(befsignal$traits.46[,c(139,140,147,148,155,156,163,164,171,172,179,180,187,188,195,196,203,204,211,212,219,220,227,228,123,124,131,132)]))
+dev.off()
+
+befsignal$traits.46$nb.temp.prec.pcoa.1 <-  pcoa.nb.temp.prec$vectors[,1]
+befsignal$traits.46$nb.temp.prec.pcoa.2 <-  pcoa.nb.temp.prec$vectors[,2]
+befsignal$traits.46$nb.temp.prec.pcoa.3 <-  pcoa.nb.temp.prec$vectors[,3]
+
+befsignal$pcoa.nb.temp.prec <- pcoa.nb.temp.prec
+
+# 4.4) niche breadth (only for variables that show signal)
+
+# !! first run phylogenetic signal test on bioclim variables
+
+# after correcting loropetalum there is no longer phylogenetic signal in any of the bioclim variables (apart from range size (area))
+
+match(rownames(befsignal$traits.46), befsignal$phy.46$tip.label)
+colnames(befsignal$traits.46)[120:232]
+
+MultiK<- function(tre, traits){
+require(phytools)
+mat <- matrix(NA, ncol = 2, nrow = dim(traits)[2])
+colnames(mat) <- c("K","P")
+rownames(mat) <- colnames(traits)
+for (i in 1:dim(traits)[2]){
+    x <- phylosig(tre, traits[tre$tip.label,i], method="K", test=TRUE, nsim=2000)
+    mat[i,] <- round(as.numeric(x), 3)
+  }
+    mat
+}
+
+multk <- MultiK(befsignal$phy.46, befsignal$traits.46[,120:232])
+multk
+write.csv(multk, file = "multk.46.bioclim.csv")
+
+colnames(befsignal$traits.46)[c(221,226,227)] # temp
+colnames(befsignal$traits.46)[c(141,154,165,172,173,180,189)] # prec
+
+
+# 4.4.1) niche breadth signal, temp (ra, iq)
+colnames(befsignal$traits.46[,c(221,226,227)])
+
+pca.nb.temp.sig <- rda(befsignal$traits.46[,c(221,226,227)], scale = T)
+summary(pca.nb.temp.sig)
+
+pdf("pca.nb.temp.sig.pdf")
+plot(pca.nb.temp.sig)
+dev.off()
+
+befsignal$traits.46$nb.temp.sig.pca.1 <- pca.nb.temp.sig$CA$u[,1]
+befsignal$traits.46$nb.temp.sig.pca.2 <- pca.nb.temp.sig$CA$u[,2]
+befsignal$traits.46$nb.temp.sig.pca.3 <- pca.nb.temp.sig$CA$u[,3]
+
+befsignal$pca.nb.temp.sig <- pca.nb.temp.sig
+
+#
+
+nb.temp.sig.D <- gowdis(scale(befsignal$traits.46[,c(221,226,227)]))
+pcoa.nb.temp.sig <- pcoa(nb.temp.sig.D)
+
+pdf("pcoa.nb.temp.sig.pdf")
+biplot(pcoa.nb.temp.sig, scale(befsignal$traits.46[,c(221,226,227)]))
+dev.off()
+
+befsignal$traits.46$nb.temp.sig.pcoa.1 <-  pcoa.nb.temp.sig$vectors[,1]
+befsignal$traits.46$nb.temp.sig.pcoa.2 <-  pcoa.nb.temp.sig$vectors[,2]
+befsignal$traits.46$nb.temp.sig.pcoa.3 <-  pcoa.nb.temp.sig$vectors[,3]
+
+befsignal$pcoa.nb.temp.sig <- pcoa.nb.temp.sig
+
+# 4.4.2) niche breadth signal, prec (ra, iq)
+colnames(befsignal$traits.46[,c(141,154,165,172,173,180,189)])
+
+pca.nb.prec.sig <- rda(befsignal$traits.46[,c(141,154,165,172,173,180,189)], scale = T)
+summary(pca.nb.prec.sig)
+
+pdf("pca.nb.prec.sig.pdf")
+plot(pca.nb.prec.sig)
+dev.off()
+
+befsignal$traits.46$nb.prec.sig.pca.1 <- pca.nb.prec.sig$CA$u[,1]
+befsignal$traits.46$nb.prec.sig.pca.2 <- pca.nb.prec.sig$CA$u[,2]
+befsignal$traits.46$nb.prec.sig.pca.3 <- pca.nb.prec.sig$CA$u[,3]
+
+befsignal$pca.nb.prec.sig <- pca.nb.prec.sig
+
+#
+
+nb.prec.sig.D <- gowdis(scale(befsignal$traits.46[,c(141,154,165,172,173,180,189)]))
+pcoa.nb.prec.sig <- pcoa(nb.prec.sig.D)
+
+pdf("pcoa.nb.prec.sig.pdf")
+biplot(pcoa.nb.prec.sig, scale(befsignal$traits.46[,c(141,154,165,172,173,180,189)]))
+dev.off()
+
+befsignal$traits.46$nb.prec.sig.pcoa.1 <-  pcoa.nb.prec.sig$vectors[,1]
+befsignal$traits.46$nb.prec.sig.pcoa.2 <-  pcoa.nb.prec.sig$vectors[,2]
+befsignal$traits.46$nb.prec.sig.pcoa.3 <-  pcoa.nb.prec.sig$vectors[,3]
+
+befsignal$pcoa.nb.prec.sig <- pcoa.nb.prec.sig
+
+
+# 4.4.3) niche breadth signal,temp &  prec (ra, iq)
+colnames(befsignal$traits.46[,c(221,226,227, 141,154,165,172,173,180,189)])
+
+pca.nb.temp.prec.sig <- rda(befsignal$traits.46[,c(221,226,227, 141,154,165,172,173,180,189)], scale = T)
+summary(pca.nb.temp.prec.sig)
+
+pdf("pca.nb.temp.prec.sig.pdf")
+plot(pca.nb.temp.prec.sig)
+dev.off()
+
+befsignal$traits.46$nb.temp.prec.sig.pca.1 <- pca.nb.temp.prec.sig$CA$u[,1]
+befsignal$traits.46$nb.temp.prec.sig.pca.2 <- pca.nb.temp.prec.sig$CA$u[,2]
+befsignal$traits.46$nb.temp.prec.sig.pca.3 <- pca.nb.temp.prec.sig$CA$u[,3]
+
+befsignal$pca.nb.temp.prec.sig <- pca.nb.temp.prec.sig
+
+#
+
+nb.temp.prec.sig.D <- gowdis(scale(befsignal$traits.46[,c(221,226,227, 141,154,165,172,173,180,189)]))
+pcoa.nb.temp.prec.sig <- pcoa(nb.temp.prec.sig.D)
+
+pdf("pcoa.nb.temp.prec.sig.pdf")
+biplot(pcoa.nb.temp.prec.sig, scale(befsignal$traits.46[,c(221,226,227, 141,154,165,172,173,180,189)]))
+dev.off()
+
+befsignal$traits.46$nb.temp.prec.sig.pcoa.1 <-  pcoa.nb.temp.prec.sig$vectors[,1]
+befsignal$traits.46$nb.temp.prec.sig.pcoa.2 <-  pcoa.nb.temp.prec.sig$vectors[,2]
+befsignal$traits.46$nb.temp.prec.sig.pcoa.3 <-  pcoa.nb.temp.prec.sig$vectors[,3]
+befsignal$pcoa.nb.temp.prec.sig <- pcoa.nb.temp.prec.sig
+
+
+# additional single traits:
+# heigth?
+# life form?
+# evergreen?
+
+##  what about whole plant traits 
+
+#####
+####
+# test correlation between phylogenetic and functional distance:
+# (mantel test, evtl. fitting non-linear functions)
+summary(befsignal$pca.leaf.all)
+
+pca.leaf.all.dist <- dist(befsignal$pca.leaf.all$CA$u[,1:2])
+phy.46.dist <- as.dist(cophenetic(befsignal$phy.46))
+mantel(scale(pca.leaf.all.dist), scale(sqrt(phy.46.dist)))
+
+plot(sqrt(phy.46.dist), pca.leaf.all.dist)
+
+###
+summary(befsignal$pca.nb.temp)
+
+pca.nb.temp.dist <- dist(befsignal$pca.nb.temp$CA$u[,1:2])
+phy.46.dist <- as.dist(cophenetic(befsignal$phy.46))
+mantel(scale(pca.nb.temp.dist), scale(sqrt(phy.46.dist)))
+
+plot((sqrt(phy.46.dist)), (pca.nb.temp.dist))
+
+##
+# compare distances for leaf.all with wood.all:
+summary(befsignal$pca.wood.all)
+
+pca.wood.all.dist <- dist(befsignal$pca.wood.all$CA$u[,1:2])
+phy.46.dist <- as.dist(cophenetic(befsignal$phy.46))
+mantel((pca.wood.all.dist), (sqrt(phy.46.dist)))
+
+plot(sqrt(phy.46.dist), pca.wood.all.dist)
+
+mantel(pca.wood.all.dist, pca.leaf.all.dist)
+plot(pca.wood.all.dist, pca.leaf.all.dist)
+
+
+pca.root.dist <- dist(befsignal$pca.root$CA$u[,1:2])
+
+
+mantel(pca.wood.all.dist, pca.root.dist)
+mantel(pca.leaf.all.dist, pca.root.dist)
+
+###
+## check signal and co-variation with whole-plant traits
+###
+
+# 1) yes, there is high phylogenetic signal in plant height and plant life form
+# 2) ! to be tested
+
+c(237,seq(240,377, by = 6))
+
+pdf("pairs.whole.plant.PC1.pdf", width = 15, height = 15)
+pairs(befsignal$traits.46[, c(237,seq(240,327, by = 6),25,27)], lower.panel = panel.smooth,upper.panel = panel.cor, diag.panel = panel.hist)
+dev.off()
+
+
+
+
+## !!! phylogenetic signal tests based trait distances on the first few or all PCA axis yield results similar to those of Blomberg' K test on the first one or two axes, means that we can stick with our analysis of K on the first ordination axis. However, see Uyeda (2015 BioRxiv) limitation of fitting evolutionary models reduced axes of dimension reduced PCA axis. Anyway, the approach seems valid for vizalization/mapping approaches (? and if the first PC-axis explains the majority of variation, e.g. >75%). But in our study should focus on tests on single traits that comprise those axes, and mention the significance of axis just marginally, but it is still allowed to use those axis for visualization purposes.
+# TAKE HOME: care should taken when fitting evolutionary models on reduced dimensions! 
+
+
+
+## re-run the phylogenetic signal test for all 231 traits and trait axes (5000 runs)
+# ! be careful to interprete signal for binary/ordinal traits (take PCA/PCoA axes where possible)
+
+MultiK<- function(tre, traits){
+require(phytools)
+mat <- matrix(NA, ncol = 2, nrow = dim(traits)[2])
+colnames(mat) <- c("K","P")
+rownames(mat) <- colnames(traits)
+for (i in 1:dim(traits)[2]){
+    x <- phylosig(tre, traits[tre$tip.label,i], method="K", test=TRUE, nsim=5000)
+    mat[i,] <- round(as.numeric(x), 3)
+  }
+    mat
+}
+
+colnames(befsignal$traits.46)
+
+multk <- MultiK(befsignal$phy.46, befsignal$traits.46)
+multk
+write.csv(multk, file = "multk.46.all.csv")
+
+# after opening save as .xls
+
+# finish 21.15
+
+###
+
+# huge scatterplot matrix for correlations between axes from PCA and PCoA
+# (!! sometimes PC2 or PC3 show really high signal):
+colnames(befsignal$traits.46)
+# only 1st PCA- with PCo-Axes
+
+seq(234,377, by = 3)
+
+pdf("pairs.PC1.pdf", width = 30, height = 30)
+pairs(befsignal$traits.46[, c(seq(234,377, by = 3))], lower.panel = panel.smooth,upper.panel = panel.cor, diag.panel = panel.hist)
+dev.off()
+# yes,first axis from PCA always highly correlated with first axis from PCoA
+
+
+## scatterplot matrix only between PC.1
+
+c(237,seq(240,377, by = 6))
+
+pdf("pairs.PC1.only.pdf", width = 20, height = 20)
+pairs(befsignal$traits.46[, c(237,seq(240,377, by = 6))], lower.panel = panel.smooth,upper.panel = panel.cor, diag.panel = panel.hist)
+dev.off()
+
+## scatterplot matrix only between PC.1 and PC.2
+
+c(237,seq(240,377, by = 6), 238,seq(241,377, by = 6))
+
+pdf("pairs.PC1.PC2.pdf", width = 30, height = 30)
+pairs(befsignal$traits.46[, c(237,seq(240,377, by = 6), 238,seq(241,377, by = 6))], lower.panel = panel.smooth,upper.panel = panel.cor, diag.panel = panel.hist)
+dev.off()
+
+# huge scatterplot matrix based on continuous traits (?! only pick 1st axis from PCA)
+
+c(237,seq(240,377, by = 6), 238,seq(241,377, by = 6))
+
+pdf("pairs.PC1.PC2.pdf", width = 30, height = 30)
+pairs(befsignal$traits.46[, c(237,seq(240,377, by = 6), 238,seq(241,377, by = 6))], lower.panel = panel.smooth,upper.panel = panel.cor, diag.panel = panel.hist)
+dev.off()
+
+## biogeo (range, marginality) and 1st PCs:
+
+pdf("pairs.PC1.all.biogeo.pdf", width = 20, height = 20)
+pairs(befsignal$traits.46[, c(224,232,237, seq(240,377, by = 6))], lower.panel = panel.smooth,upper.panel = panel.cor, diag.panel = panel.hist)
+dev.off()
+
+### correlation matrix between single continous traits
+
+pdf("pairs.sing.cont.pdf", width = 25, height = 25)
+pairs(befsignal$traits.46[, c(3:25,29:34,99:101,104:118)], lower.panel = panel.smooth,upper.panel = panel.cor, diag.panel = panel.hist)
+dev.off()
+
+#######
+
+# visualize phylogenetic signal using trait reconstructions (Revell) (9-16 per sheet)
+# i) continuous traits
+
+vec2 <- befsignal$traits.46$def.pca.1
+names(vec2) <- rownames(befsignal$traits.46)
+colnames(vec2) <- colnames(befsignal$traits.46)[1]
+range(befsignal$phy.46$edge.length)
+
+pdf("contmap.pdf", width = 20, height = 20)
+par(mfrow = c(3,3))
+for (i in c(1:34, 99:101,104:114,116:118,120,232,237,seq(240,377, by = 6))){
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,i],ftype="off",sig=1,legend=20)
+text(30, -2, colnames(befsignal$traits.46)[i])
+}
+dev.off()
+
+# ii) binary traits
+
+# finish 22.00
+
+# show some co-plots for some trait axes/groups:
+# i) where both trait groups show signal, but either are correlated (either possitively or negatively) or uncorrelated
+# ii) where both trait groups do not show signal, but either are correlated (either possitively or negatively) or uncorrelated
+# ??? iii) where one group (that is easy to measure) shows signal, but the other groups (maybe one that is difficult to measure) does not show signal, but is highly correlated with the first group (? does this mean that in such cases phylogeny may be used as a proxy for traits that are not conserved?) .. BUT can this really happen: that two traits are correlated but one shows high signal and the other one not 
+# !!! (nate could run an additional type of simulation where one trait has signal but the other has not, and then see whether there still could be strong correlations) -> this would have potentially important implications for PD-ecosystem functioning studies: in that case phylogeny may serve as a proxy even for unconserved traits, if those traits co-vary with traits that show strong signal.
+
+# phylogenetic co-plots
+# 1) both traits show signal
+# 1.1) are uncorrelated
+# leaf.all vs. wood.all
+
+pdf("Leaf.Wood.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,276],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[276])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,312],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[312])
+dev.off()
+
+pdf("Leaf.Root.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,276],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[276])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,324],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[324])
+dev.off()
+
+pdf("Wood.Root.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,312],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[312])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,324],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[324])
+dev.off()
+
+pdf("LeafCN.RootCN.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,372],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[372])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,324],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[324])
+dev.off()
+
+pdf("Wood.ClimNiche.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,312],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[312])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,342],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[342])
+dev.off()
+
+# 1.2) are positively correlated
+# stom vs. wood vessel
+
+pdf("LeafStom.WoodVessel.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,240],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[240])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,288],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[288])
+dev.off()
+
+# ring.pore vs. vessel
+
+pdf("WoodRingPore.WoodVessel.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,282],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[282])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,288],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[288])
+dev.off()
+
+# ring.pore vs. parench.
+
+pdf("WoodRingPore.WoodParench.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,282],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[282])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,306],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[306])
+dev.off()
+
+# leaf.cn vs. root.cn
+
+pdf("LeafCN.RootCN.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,372],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[372])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,324],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[324])
+dev.off()
+
+# leaf cn vs. ele.no.cn
+pdf("LeafCN.Ele.no.CN.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,372],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[372])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,258],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[258])
+dev.off()
+
+# leaf cn vs. morph
+pdf("LeafCN.LeafMorph.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,372],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[372])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,237],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[237])
+dev.off()
+
+
+# 1.3) are negatively correlated
+# leaf.morph vs. leaf.prod:
+
+pdf("LeafMorph.LeafProd.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,237],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[237])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,246],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[246])
+dev.off()
+
+# root.cn vs. leaf.productivity
+
+pdf("RootCN.LeafProd.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,324],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[324])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,246],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[246])
+dev.off()
+
+
+# 2) trait group where at least on group is not conserved but the two groups are highly correlated
+
+# ele.no.cn vs. prod
+pdf("LeafEle.noCN.Prod.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,258],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[258])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,246],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[246])
+dev.off()
+
+# ele.no.cn vs. morph
+
+pdf("LeafEle.noCN.Leaf.morph.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,258],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[258])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,237],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[237])
+dev.off()
+
+# ele.no.cn vs. leaf.cn
+pdf("LeafEle.noCN.Leaf.CN.CorEvo.pdf", width = 18, height = 11)
+ layout(matrix(1:3,1,3),widths=c(0.44,0.12,0.44))
+ par(cex=1)
+contMap(befsignal$phy.46, as.matrix(befsignal$traits.46)[,258],ftype="off",sig=1,legend=30)
+text(50, -2, colnames(befsignal$traits.46)[258])
+ ylim<-c(1-0.12*(length(befsignal$phy.46$tip.label)-1),length(befsignal$phy.46$tip.label))
+ plot.new(); plot.window(xlim=c(-0.1,0.1),ylim=ylim)
+ text(rep(0,length(befsignal$phy.46$tip.label)), 1:length(befsignal$phy.46$tip.label),befsignal$phy.46$tip.label)
+ contMap(befsignal$phy.46,as.matrix(befsignal$traits.46)[,372],ftype="off",direction="leftwards", sig=1,legend=30)
+text(60, -2, colnames(befsignal$traits.46)[372])
+dev.off()
+
+#####################################
+# pairwise correlation plot (with in reconstructed trait values in the middle)
+#####################################
+# Revell pairwise correlation plot
+# for all four axes: leaf, wood, root, bioclim
+
+pdf("LeafWoodRootClimNiche.phylo.cor.pdf", width = 10, height = 10)
+tree <- befsignal$phy.46
+X <- as.matrix(befsignal$traits.46[,c(276,312,324,342)])
+m<-ncol(X)
+par(mfrow=c(m,m))
+par(cex=0.6)
+par(mar=c(0,0,0,0))
+par(oma=c(5,5,3,3))
+m<-ncol(X)
+for(i in 1:m) for(j in 1:m){
+  if(i==j) contMap(tree,X[,i],legend=FALSE,lwd=2,outline=F,fsize=0.5)
+  else {
+    phylomorphospace(tree,X[,c(j,i)],lwd=1,node.by.map=TRUE,axes=FALSE)
+    if(i==1) axis(side=3) # top row
+    if(i==m) axis(side=1) # first column
+    if(j==1) axis(side=2) # bottom row
+    if(j==m) axis(side=4) # last column
+  }
+}
+par(cex=0.9)
+mapply(title,xlab=colnames(X),adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+mapply(title,ylab=colnames(X)[m:1],adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+dev.off()
+
+#### recode function so that it can plot pairwise correlation/regression lines:
+
+pdf("LeafWoodRootClimNiche.phylo.cor.line.pdf", width = 12, height = 12)
+tree <- befsignal$phy.46
+X <- as.matrix(befsignal$traits.46[,c(276,312,324,342)])
+colnames(X) <- c("Leaf","Wood","Root","Clim.Niche")
+m<-ncol(X)
+par(mfrow=c(m,m))
+par(cex=0.6)
+par(mar=c(0,0,0,0))
+par(oma=c(5,5,3,3))
+m<-ncol(X)
+for(i in 1:m) for(j in 1:m){
+  if(i==j) contMap(tree,X[,i],legend=FALSE,lwd=2,outline=F,fsize=0.5)
+  else {
+    plot(X[,j], X[,i],axes=F, pch = 19)
+    box()
+    abline(lm(X[,i] ~ X[,j]))
+    if(i==1) axis(side=3) # top row
+    if(i==m) axis(side=1) # first column
+    if(j==1) axis(side=2) # bottom row
+    if(j==m) axis(side=4) # last column
+  }
+}
+par(cex=0.9)
+mapply(title,xlab=colnames(X),adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+mapply(title,ylab=colnames(X)[m:1],adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+dev.off()
+
+# no line
+pdf("LeafWoodRootClimNiche.phylo.cor.noline.pdf", width = 9, height = 9)
+#postscript("LeafWoodRootClimNiche.phylo.cor.noline.eps", width = 10, height = 10, paper = "special", onefile = FALSE, horizontal = FALSE, pointsize=14)
+tree <- befsignal$phy.46
+X <- as.matrix(befsignal$traits.46[,c(276,312,324)])
+colnames(X) <- c("Leaf","Wood","Root")
+m<-ncol(X)
+par(mfrow=c(m,m))
+par(cex=0.6)
+par(mar=c(0,0,0,0))
+par(oma=c(5,5,3,3))
+m<-ncol(X)
+for(i in 1:m) for(j in 1:m){
+  if(i==j) contMap(tree,X[,i],legend=FALSE,lwd=2,outline=F,fsize=0.5)
+  else {
+    plot(X[,j], X[,i],axes=F, pch = 19)
+    box()
+    #abline(lm(X[,i] ~ X[,j]))
+    if(i==1) axis(side=3) # top row
+    if(i==m) axis(side=1) # first column
+    if(j==1) axis(side=2) # bottom row
+    if(j==m) axis(side=4) # last column
+  }
+}
+par(cex=1.8)
+mapply(title,xlab=colnames(X),adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=2))
+mapply(title,ylab=colnames(X)[m:1],adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=2))
+dev.off()
+
+
+####### within groups
+# leaf
+pdf("LeafGroupphylocorline.pdf", width = 12, height = 12)
+#postscript("LeafGroup.phylo.cor.line.eps", width = 12, height = 12, paper = "special", onefile = FALSE, horizontal = FALSE, pointsize=14)
+tree <- befsignal$phy.46
+X <- as.matrix(befsignal$traits.46[,c(237,240,246,258,270)])
+colnames(X) <- c("Morphology","Stomata","Productivity","Nutrient content","Defense")
+m<-ncol(X)
+par(mfrow=c(m,m))
+par(cex=0.6)
+par(mar=c(0,0,0,0))
+par(oma=c(5,5,3,3))
+m<-ncol(X)
+for(i in 1:m) for(j in 1:m){
+  if(i==j) contMap(tree,X[,i],legend=FALSE,lwd=2,outline=F,fsize=0.5)
+  else {
+    plot(X[,j], X[,i],axes=F, pch = 19)
+    box()
+    abline(lm(X[,i] ~ X[,j]))
+    if(i==1) axis(side=3) # top row
+    if(i==m) axis(side=1) # first column
+    if(j==1) axis(side=2) # bottom row
+    if(j==m) axis(side=4) # last column
+  }
+}
+par(cex=1.5)
+mapply(title,xlab=colnames(X),adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+mapply(title,ylab=colnames(X)[m:1],adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+dev.off()
+
+# wood
+pdf("WoodGroupphylocorline.pdf", width = 10, height = 10)
+#postscript("WoodGroup.phylo.cor.line.eps", width = 13, height = 13, paper = "special", onefile = FALSE, horizontal = FALSE, pointsize=14)
+tree <- befsignal$phy.46
+X <- as.matrix(befsignal$traits.46[,c(282,288,294,300,306)])
+colnames(X) <- c("Rings/Porosity","Vessels","Rays","Fibre","Parenchyma")
+m<-ncol(X)
+par(mfrow=c(m,m))
+par(cex=0.6)
+par(mar=c(0,0,0,0))
+par(oma=c(5,5,3,3))
+m<-ncol(X)
+for(i in 1:m) for(j in 1:m){
+  if(i==j) contMap(tree,X[,i],legend=FALSE,lwd=2,outline=F,fsize=0.5)
+  else {
+    plot(X[,j], X[,i],axes=F, pch = 19)
+    box()
+    abline(lm(X[,i] ~ X[,j]))
+    if(i==1) axis(side=3) # top row
+    if(i==m) axis(side=1) # first column
+    if(j==1) axis(side=2) # bottom row
+    if(j==m) axis(side=4) # last column
+  }
+}
+par(cex=1.5)
+mapply(title,xlab=colnames(X),adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+mapply(title,ylab=colnames(X)[m:1],adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+dev.off()
+
+####################
+
+# leaf vs. wood CN
+pdf("LeafCN.RootCN.phylo.cor.line.pdf", width = 12, height = 12)
+tree <- befsignal$phy.46
+X <- as.matrix(befsignal$traits.46[,c(372,8:10,324,116:118)])
+colnames(X) <- c("Leaf.C.N.PC1","Leaf.C","Leaf.N","Leaf.CN","Root.C.N.PC1","Root.C","Root.N","Root.CN")
+m<-ncol(X)
+par(mfrow=c(m,m))
+par(cex=0.6)
+par(mar=c(0,0,0,0))
+par(oma=c(5,5,3,3))
+m<-ncol(X)
+for(i in 1:m) for(j in 1:m){
+  if(i==j) contMap(tree,X[,i],legend=FALSE,lwd=2,outline=F,fsize=0.4)
+  else {
+    plot(X[,j], X[,i],axes=F, pch = 19)
+    box()
+    abline(lm(X[,i] ~ X[,j]))
+    if(i==1) axis(side=3) # top row
+    if(i==m) axis(side=1) # first column
+    if(j==1) axis(side=2) # bottom row
+    if(j==m) axis(side=4) # last column
+  }
+}
+par(cex=0.9)
+mapply(title,xlab=colnames(X),adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+mapply(title,ylab=colnames(X)[m:1],adj=
+  seq(0,(m-1)/m,1/m)+1/(2*m),MoreArgs=
+  list(outer=TRUE,cex=0.9))
+dev.off()
+
+# !!?! if we find in the two approaches above (i: between axes of differentiation) and (ii: between groups traits belonging to the same axis of differentition) that, despite different axes/groups being conserved, there is no/weak or weak covariation between them, this would indicate that phylogeny could not be used to predict ecosystem properties associated with unmeasured axes of plant functional differention (or groups of traits), even though unmeasured traits are conserved.
+
+# !!??!! in turn, if we find within particular groups traits are conserved and highly correlated, this would 
+
+# for proposal:
+
+# what is the problem:
+# phylogenetic (evolutionary) relatedness between species often taken as proxy for trait ..
+# in traits that are hard to measure#
+# .. potentially integrates greater information ....
+# .. may help to detect hidden 
+# signal in many traits (or groups) that are difficult measure often unknown
+# groups of traits (syndromes) important (agrawal) as well as multiple axes of differention (pratt 2007 and refs. in baraloto and chave papers) # studies should not only incorporate leaf and stem dynamics but also root and biogeography (climate niche) (also unknown to geographic range characterics are conserved and to which extent species' bioclimatic niche characteristics are associated with leaf, wood and root traits)
+# however, studies of multiple axes (or traits difficult to measure) so far only focussed on single clades, and 2) studies, of many species at the commuity level have only focussed on very restricted set of traits.
+# looking at many axes of differention at the community scale may help to detect to detect the amount of functional diversity (hidden in traits that are difficult to measure)
+# however the utility of pd as proxy (as a more integrative measure of ..) for EF associated with a unmeasured traits (the extent to which phylogenetic signal is conserved at the community scale (Srivastava 2012)), not only
+
+(correlation between traits depends on the scale at which they are measured)
+little is known about correlations between different axes of trait evolution (kembel and cahill 2009 plos one)
+- also test different axis of differention have evolved in a correlated fashion
+- suggest that biogeography and trait evolution should be considered in the study trait diversity in ecological communities
+
+# in our simulation study (evolving, on the fully resolved phylogeny from the CSP-species, traits with varying levels of phylogenetic signal), we will explore the extent levels of phylogenetic signal between traits affect their covariation.
+# if we find, that two traits that share high levels phylogenetic signal have weak covariation, this would indicate that are phylogeny is not a good proxy to predict ecosystem properties, associated to unmeasured traits (even if those traits are conserved)
+
+## .. in turn, even if traits (difficult to measure) are not conserved, phylogeny could be a good proxy, if such traits co-vary with measured traits that are phylogenetically conserved.
+
+# in a second step, we will use fully resolved phylogeny, 
+
+# .. by integrating simulation .. with a large set of traits ... 
+# we will discuss implications for BEF-studies
+# e.g. if we find... the would mean that pd is not a good predictor for EF associated to unmeasured traits (even if those are conserved) if these traits do not co-vary
+(BUT then in our study this would mean that all traits that are conserved but do not covary with the traits that are easy to measure would not be a good proxy for EF?)
+??!! or would this mean that phylogeny is just not a good proxy for the effect of such traits on EF??
+
+# BUT why is phylogeny always the better predictor for productivity in cadotte studies
+# (this )
+
+#########
+
+
+
+summary(lm(befsignal$traits.46[,279] ~ befsignal$traits.46[,315]))
+
+summary(lmp(befsignal$traits.46[,276] ~ befsignal$traits.46[,312]))
+
+cor.test(befsignal$traits.46[,279], befsignal$traits.46[,315])
+plot(befsignal$traits.46[,279], befsignal$traits.46[,315], pch = 19)
+
+###################################
+
+# sunday: pairwise correlation plot (with in reconstructed trait values in the middle)
+# if we show that two trait axis can conserved but uncorrelated (? because they are conserved in different parts in the phylogeny)
+
+
+# send proposal to nate
+# send results and groupings to nate + request simulations
+
+# monday: send proposal and results to helge
+
+# still unclear: what to do with binary traits??
+# how to/should we form sydromes?
+
+
+# load additional functions
+source(paste(path.code.generic, "OPfunc.R", sep = ""))
+
+
+# load entire data set
+load(paste(path.data, "bci.data.Rdata", sep = ""))
+
+## match entire phylogeny against Tank-tree
+tank.tree.bef <- read.tree("/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/Jess_Gutknecht_PLFA/TankTreeBefChina.tre")
+path.phylo <- "/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/Data/Phylo/"
+phy.gut.nprs <- read.tree(paste(path.phylo, "Final_BEF_phylo_nprs_438taxa.tre", sep = ""))
+
+library(taxize)
+library(Taxonstand)
+
+nam <- gsub("_", " ", phy.gut.nprs$tip.label)
+
+# 
+bef.tnrs <- tnrs(query = nam, source = "iPlant_TNRS")#[ , -c(5:7)]
+
+names(bef.tnrs)
+bef.tnrs <- bef.tnrs[ , c(1,2,4,5)]
+write.csv(bef.tnrs, file = "bef.tnrs.csv")
+
+bef.tpl <- TPL(bef.tnrs$matchedname, genus = NULL, species = NULL, infrasp = NULL, infra = TRUE, abbrev = TRUE, corr = TRUE, diffchar = 2, max.distance = 1, version = "1.1", file = "bef.tpl.csv")
+
+bef.tpl.2 <- TPL(bef.tnrs$submittedname, genus = NULL, species = NULL, infrasp = NULL, infra = TRUE, abbrev = TRUE, corr = TRUE, diffchar = 2, max.distance = 1, version = "1.1", file = "bef.tpl.2.csv")
+
+#Warnmeldungen:
+#1: In TPLck(sp = d, corr = corr, diffchar = diffchar, max.distance = max.distance,  :
+#  Taxus chinensis has more than one valid synonym
+#2: In TPLck(sp = d, corr = corr, diffchar = diffchar, max.distance = max.distance,  :
+#  Phyllanthus glaucus has more than one valid synonym
+#3: In TPLck(sp = d, corr = corr, diffchar = diffchar, max.distance = max.distance,  :
+#  Firmiana platanifolia has more than one valid synonym
+
+names(bef.tpl)
+bef.tpl.newnames <- paste(bef.tpl$New.Genus, bef.tpl$New.Species, sep = "_")
+
+tips <- as.data.frame(bef.tpl.newnames)
+
+rownames(tips) <- tips[,1]
+
+tips[,1] <- as.character(tips[,1])
+length(unique(tips[,1]))
+
+bef.tank <- prune.sample(t(tips), tank.tree)
+
+plot(bef.tank)
+# seven species missing:
+rownames(tips)[which(rownames(tips) %in%  bef.tank$tip.label==FALSE)]
+
+tips[which(tips[,1] %in% tank.tree.bef$tip.label==FALSE),1]
+sort(unique(tips[which(tips[,1] %in% tank.tree.bef$tip.label==FALSE),1]))
+
+######
+# Examine covariation between traits/trait groups within and among plant organs
+
+# 1) single traits 16.45 - 17.30
+# compare mean absolute "within organ" corralation with "among organ" correlation
+
+# rearrange traits in trait table according to leaf, wood, root
+# 1) LEAF
+# 1.1) leaf morphology (PCoA)
+
+befsignal$traits.46.sort <- cbind(befsignal$traits.46[,c(1,2,26,  # morph
+                                                         19:21,   # transpiration
+                                                         3:10,    # productivity
+                                                         11:18,22,23, # elemental content
+                                                         29,30,34,    # defense
+                                                         
+                                                         ############# Exclude some wood traits as they are correlated by 1 with other wood traits
+                                                         36:39, # Rings and pores (exclude X1)
+                                                         40,41,43:51,52:57,59,60,100,101, # Vessels (incl. perforation plates) (exclude X9)
+                                                         80:91,99, # Rays (exclude X96)
+                                                         62:66,68:70,24, # Fibre (incl. wood density)
+                                                         71:77, # Parenchyma
+                                                         
+                                                         ############ 
+                                                         116:118 # Root
+                                                         
+                                                         )])
+colnames(befsignal$traits.46)
+colnames(befsignal$traits.46.sort)
+
+corsing <- cor.table(befsignal$traits.46.sort, cor.method = c("p"), cor.type=c("standard"))
+plot(density(abs(as.dist(corsing$P))))
+
+summary(as.dist(corsing$r))
+range(as.dist(corsing$r))
+
+corsing.r <- abs(as.dist(corsing$r))  
+corsing.p <- abs(as.dist(corsing$P))  
+organvec <- dist(c(rep(1, 27), rep(2, 54), rep(4, 3)))
+
+mean(corsing.r[organvec==0]) # within organs
+# 0.1782579
+plot(density(corsing.r[organvec==0]))
+
+mean(corsing.r[organvec!=0]) # among organs
+# 0.1446653
+plot(density(corsing.r[organvec!=0]))
+
+##
+
+# correlation within vs. among organs:
+library(spacodiR)
+resamp.test(obs=corsing.r[organvec==0], exp=corsing.r[organvec!=0], two.tailed=F)
+
+
+library(ggplot2)
+
+df <- data.frame(Organ = factor(rep(c("Within","Among"), c(1785, 1701))), 
+                 Correlation = c(corsing.r[organvec==0], corsing.r[organvec!=0]))
+
+# Interleaved histograms
+pdf("sing.hist.pdf", width = 6, height = 3.5)
+ggplot(df, aes(x=Correlation, fill=Organ)) + geom_histogram(binwidth=.05, position="dodge") + theme(legend.position = c(.9,.8))
+dev.off()
+
+# Interleaved histograms
+ggplot(df, aes(x=Correlation, fill=Organ)) + geom_histogram(binwidth=.05, position="dodge")
+
+# Density plots
+ggplot(df, aes(x=Correlation, colour=Organ)) + geom_density()
+
+# Density plots with semi-transparent fill
+ggplot(df, aes(x=Correlation, fill=Organ)) + geom_density(alpha=.3)
+
+###################################################################
+# Find the mean of each group
+library(plyr)
+cdf <- ddply(df, "Organ", summarise, Correlation.mean=mean(Correlation))
+cdf
+# Organ Correlation.mean
+#    A -0.05775928
+#    B  0.87324927
+
+
+# Overlaid histograms with means
+pdf("sing.hist.mean.pdf", width = 6, height = 3.5)
+ggplot(df, aes(x=Correlation, fill=Organ)) +
+  geom_histogram(binwidth=.05, alpha=.5, position="dodge") +
+  geom_vline(data=cdf, aes(xintercept=Correlation.mean,  colour=Organ),
+             linetype="dashed", size=1) + theme(legend.position = c(.9,.8))
+dev.off()
+
+# Density plots with means
+ggplot(df, aes(x=Correlation, colour=Organ)) + geom_density() +
+  geom_vline(data=cdf, aes(xintercept=Correlation.mean,  colour=Organ),
+             linetype="dashed", size=1)
+
+# Using facets
+# With mean lines, using cdf from above
+ggplot(df, aes(x=Correlation)) + geom_histogram(binwidth=.05, colour="black", fill="white") + 
+  facet_grid(Organ ~ .) +
+  geom_vline(data=cdf, aes(xintercept=Correlation.mean),
+             linetype="dashed", size=1, colour="red")
+
+
+# Boxplots
+# Add a diamond at the mean, and make it larger
+pdf("sing.box.pdf", width = 3.5, height = 5)
+ggplot(df, aes(x=Organ, y=Correlation)) + geom_boxplot() +
+  stat_summary(fun.y=mean, geom="point", shape=5, size=4)
+dev.off()
+
+
+#$greater
+#[1] 0.559
+
+#$lesser
+#[1] 0.441
+
+# correlation between traits that belong to the same organ is not significantly higher than correlation between traits that belong to different organs
+
+####
+# correlation between PC.1 from PCAs on three trait subsets:
+
+comb <- combinations(27, 15, colnames(befsignal$traits.46.sort)[1:27], set=TRUE, repeats.allowed=FALSE)
+dim(comb)
+
+# important for FPD study with Marc:
+# all 15-trait subsets on 27 traits gives 17383860 possible combinations
+# combinations(27, 15,1:27)
+
+comb <- combinations(70, 5, 1:70)
+dim(comb)
+gc()
+
+# within organs:
+# e.g. leaf:
+
+comb <- combinations(27, 3, colnames(befsignal$traits.46.sort)[1:27], set=TRUE, repeats.allowed=FALSE)
+
+pc1mat <- NA
+for (i in 1:dim(comb)[1] ){  # 1:dim(comb)[1]   
+pc1 <- rda(befsignal$traits.46.sort[, which(colnames(befsignal$traits.46.sort) %in% comb[i,])], scale = T)$CA$u[,1]
+pc1mat <- cbind(pc1mat, pc1)
+}
+pc1mat <- pc1mat[, -1]
+
+dim(pc1mat)
+
+pc1mat.wood <- pc1mat
+
+dim(pc1mat.leaf)
+# 46 2925
+
+dim(pc1mat.wood)
+# 46 24804
+
+
+# continue here:
+# 1) merge pc.1 for leaf, wood and the one for root
+pc1mat.root <- rda(befsignal$traits.46.sort[, 82:84], scale = T)$CA$u[,1]
+
+pc1.3traits.leaf.wood.root <- cbind(pc1mat.leaf, pc1mat.wood, pc1mat.root)
+dim(pc1.3traits.leaf.wood.root)
+
+# 2) generate distance matrix
+corsing.pc1 <- cor.table(pc1.3traits.leaf.wood.root, cor.method = c("p"), cor.type=c("standard"))
+# error: kann Vektor der Größe 5.7 GB nicht allozieren
+save(pc1.3traits.leaf.wood.root, file = "pc1.3traits.leaf.wood.root.Rdata")
+
+# to do Thursday: 
+# - 10.00: run on R-studio server!
+# - 10.30 test within and among axes
+# - 11.30 test within and among my previous axes
+
+#####
+# compare within and among axes:
+# 1) my old classification: among -- three major leaf wood root axis, within -- leaf.prod, leaf.stom ...
+
+# 2) within and among: as above but among-organ based on subgroups
+
+# 1) 
+# among the three major axes:
+colnames(befsignal$traits.46)
+corsing.among.all.pc1 <- cor.table(befsignal$traits.46[, c(276,312,324)], cor.method = c("p"), cor.type=c("standard"))
+corsing.among.all.pc1.r <- abs(as.dist(corsing.among.all.pc1$r))  
+mean(corsing.among.all.pc1.r)
+# 0.2909577
+
+# within the three major axes:
+corsing.within.all.pc1 <- cor.table(befsignal$traits.46[, c(237,240,246,252,270, 282,288,294,300,306, 324)], cor.method = c("p"), cor.type=c("standard"))
+corsing.within.all.pc1.r <- abs(as.dist(corsing.within.all.pc1$r))  
+mean(corsing.within.all.pc1.r)
+
+organvec.pc1 <- dist(c(rep(1, 5), rep(2, 5), rep(4, 1)))
+
+mean(corsing.within.all.pc1.r[organvec.pc1==0]) # within organs
+length(corsing.within.all.pc1.r[organvec.pc1==0]) # within organs
+
+mean(corsing.within.all.pc1.r[organvec.pc1!=0]) # among organs
+length(corsing.within.all.pc1.r[organvec.pc1!=0]) # among organs
+
+# 2 
+
+df <- data.frame(Organ = factor(rep(c("Within","Among"), c(20, 35))), 
+                 Correlation = c(corsing.within.all.pc1.r[organvec.pc1==0], corsing.within.all.pc1.r[organvec.pc1!=0]))
+
+df$Organ <- factor(df$Organ, as.character(df$Organ))
+
+library(plyr)
+cdf <- ddply(df, "Organ", summarise, Correlation.mean=mean(Correlation))
+cdf
+
+# Interleaved histograms
+pdf("PC1.all.hist.pdf", width = 6, height = 3.5)
+ggplot(df, aes(x=Correlation, fill=Organ)) + geom_histogram(binwidth=.1, position="dodge") + theme(legend.position = c(.9,.8)) + xlim(0, 1)
+dev.off()
+
+
+# Density plots with means
+pdf("PC1.all.dens.mean.pdf", width = 6, height = 3.5)
+ggplot(df, aes(x=Correlation, colour=Organ)) + geom_density(adjust = 1.5) + geom_vline(data=cdf, aes(xintercept=Correlation.mean,  colour=Organ), linetype="dashed", size=1) + xlim(0, 1)
+dev.off()
+
+pdf("PC1.all.box.pdf", width = 3, height = 4)
+ggplot(df, aes(x=Organ, y=Correlation)) + geom_boxplot() + stat_summary(fun.y=mean, geom="point", shape=5, size=4)
+dev.off()
+
+df$Organ2 <- factor(df$Organ, as.character(df$Organ))
+ggplot(df, aes(x=Organ, y=Correlation)) + geom_violin() + geom_boxplot(width=0.1)
+
+resamp.test(obs=corsing.within.all.pc1.r[organvec.pc1==0], exp=corsing.within.all.pc1.r[organvec.pc1!=0], two.tailed=F)
+
+################################################################################
+## redo some of the figures from the phylogenetic signal simulations by Nate:
+################################################################################
+setwd("/home/oliver/Dokumente/PhD/PostPhD/Projects/BEF_China/iDiv_BEF_Phylo/2_Phylosignal/nate_simul/oliver.signal")
+
+sig=read.csv("rand.bef.signal.BMsigma1.csv", header=F) # phylogenetic signal (Blomberg's K and P-value from randomization testing)
+tr = read.csv("rand.bef.dat.BMsigma1.csv", header=F) # 10000 traits for 46 with high signal
+sig2 = cbind(1:10000, sig) # set an index 1 ... 10000
+
+sig0.5=read.csv("rand.bef.signal.BMsigma0.5.csv", header=F)
+tr0.5 = read.csv("rand.bef.dat.BMsigma0.5.csv", header=F)
+sig20.5 = cbind(1:10000, sig0.5)
+
+sig.01=read.csv("rand.bef.signal.BMsigma0.1.csv", header=F)
+tr.01 = read.csv("rand.bef.dat.BMsigma0.1.csv", header=F)
+sig2.01 = cbind(1:10000, sig.01)
+
+sig.all <- rbind(sig2, sig20.5, sig2.01)
+dim(sig.all)
+sigvec <- rep(c(1,0.5,0.1), each = 10000)
+
+sig.all.2 <- cbind(sigvec, sig.all)
+colnames(sig.all.2) <- c("Variance", "ID", "K", "P")
+sig.all.2$Variance <- as.factor(sig.all.2$Variance)
+
+library(ggplot2)
+
+pdf("phylo46nolabel.pdf", width = 5, height = 12)
+plot(befsignal$phy.46, cex = .8, show.tip.label = T)
+dev.off()
+
+
+# Plot Blomberg's K values
+pdf("Traitsim.var.dens.pdf", width = 3, height = 3)
+ggplot(sig.all.2, aes(x=K, colour=Variance)) + geom_density()+ theme(legend.position = c(.8,.7))+xlab("Phylogenetic signal (K)")+ylab("Density")
+dev.off()
+
+pdf("Traitsimvarhist.pdf", width = 4, height = 2)
+ggplot(sig.all.2, aes(x=K, fill=Variance)) + geom_histogram(binwidth=.15, position="dodge") + theme(legend.position = c(.8,.6))+xlab("Phylogenetic signal (K)") +ylab("Frequency")#+ xlim(.5,2)
+dev.off()
+
+# Plot P-values
+
+pdf("Traitsim.var.dens.P.pdf", width = 3, height = 3)
+ggplot(sig.all.2, aes(x=P, colour=Variance)) + geom_density()+ theme(legend.position = c(.8,.7))+ xlim(-0.001,.1)+xlab("P-value")+ylab("Density")
+dev.off()
+
+pdf("TraitsimvarhistP.pdf", width = 4, height = 2)
+ggplot(sig.all.2, aes(x=P, fill=Variance)) + geom_histogram(binwidth=.01, position="dodge") + theme(legend.position = c(.8,.6)) + xlim(-0.001,.1)+xlab("P-value")+ylab("Frequency")
+dev.off()
+
+
+#####
+################################################################################################
+################################################################################################
+#### FIGURE 1 ##################################################################################
+################################################################################################
+################################################################################################
+
+par(mfrow = c(2,3))
+
+hist(sig2[,2], xlab="K", ylab="Frequency", main="", col="black")
+hist(sig20.5[,2], xlab="K", ylab="Frequency", main="", col="black")
+hist(sig2.01[,2], xlab="K", ylab="Frequency", main="", col="black")
+hist(sig2[,3], xlab="K", ylab="Frequency", main="", col="black")
+hist(sig20.5[,3], xlab="K", ylab="Frequency", main="", col="black")
+hist(sig2.01[,3], xlab="K", ylab="Frequency", main="", col="black")
+
+################################################################################################
+################################################################################################
+#### FIGURE 2 ##################################################################################
+################################################################################################
+################################################################################################
+
+k.1.sig = sig2[sig2[,2]>=1, ]
+k.1.sig.tr = tr[,k.1.sig[,1]]
+k.1.tr.cor.matrix.1 = cor(k.1.sig.tr)
+
+par(mfrow = c(1,3))
+hist(abs(as.dist(k.1.tr.cor.matrix.1)), xlab="| Pearson Correlation (r) |", ylab="Frequency", main="", col="black")
+
+k.1.sig = sig2[sig2[,2]>=1.5, ]
+k.1.sig.tr = tr[,k.1.sig[,1]]
+k.1.tr.cor.matrix.1.5 = cor(k.1.sig.tr)
+
+hist(abs(as.dist(k.1.tr.cor.matrix.1.5)), xlab="| Pearson Correlation (r) |", ylab="Frequency", main="", col="black")
+
+k.1.sig = sig2[sig2[,2]>=2, ]
+k.1.sig.tr = tr[,k.1.sig[,1]]
+k.1.tr.cor.matrix.2 = cor(k.1.sig.tr)
+
+hist(abs(as.dist(k.1.tr.cor.matrix.2)), xlab="| Pearson Correlation (r) |", ylab="Frequency", main="", col="black")
+
+#####################
+# do it in ggplot:
+#####################
+
+df <- data.frame("Correlation" = c(abs(as.dist(k.1.tr.cor.matrix.1)), abs(as.dist(k.1.tr.cor.matrix.1.5)), abs(as.dist(k.1.tr.cor.matrix.2))), "K" = rep(c(">1",">1.5",">2"), c(9178470,49141 ,15)))
+
+# Plot Blomberg's K values
+pdf("Traitsim.Corr.dens.pdf", width = 4, height = 3.5)
+ggplot(df, aes(x=Correlation, colour=K)) + geom_density()+ theme(legend.position = c(.8,.7))
+dev.off()
+
+library(plyr)
+cdf <- ddply(df, "K", summarise, Correlation.mean=mean(Correlation))
+cdf
+
+# Density plots with means
+pdf("Traitsim.Corr.dens.mean.pdf", width = 3, height = 3.5)
+ggplot(df, aes(x=Correlation, colour=K)) + geom_density(adjust = 1) + geom_vline(data=cdf, aes(xintercept=Correlation.mean,  colour=K), linetype="dashed", size=1) + xlim(0, 1)+ theme(legend.position = c(.8,.7)) + xlab("| Pearson Correlation (r) |")+ ylab("Density")
+dev.off()
+
+gc()
+
+################################################################################################
+################################################################################################
+#### FIGURE 3 ##################################################################################
+################################################################################################
+################################################################################################
+
+p.1.sig = sig2[sig2[,3]<=0.05, ]
+p.1.sig.tr = tr[,p.1.sig[,1]]
+p.1.tr.cor.matrix = round(cor(p.1.sig.tr), 2)
+
+p.0.5.sig = sig20.5[sig20.5[,3]<=0.05, ]
+p.0.5.sig.tr = tr0.5[,p.0.5.sig[,1]]
+p.0.5.tr.cor.matrix = round(cor(p.0.5.sig.tr), 2)
+
+p.0.1.sig = sig2.01[sig2.01[,3]<=0.05, ]
+p.0.1.sig.tr = tr.01[,p.0.1.sig[,1]]
+p.0.1.tr.cor.matrix = round(cor(p.0.1.sig.tr), 2)
+
+gc()
+
+par(mfrow = c(1,3))
+hist(abs(as.dist(p.1.tr.cor.matrix)), xlab="| Pearson Correlation (r) |", ylab="Frequency", main="", col="black")
+hist(abs(as.dist(p.0.5.tr.cor.matrix)), xlab="| Pearson Correlation (r) |", ylab="Frequency", main="", col="black")
+hist(abs(as.dist(p.0.1.tr.cor.matrix)), xlab="| Pearson Correlation (r) |", ylab="Frequency", main="", col="black")
+
+df <- data.frame("Correlation" = c(sample(abs(as.dist(p.0.1.tr.cor.matrix)), 1000000), sample(abs(as.dist(p.0.5.tr.cor.matrix)), 1000000), sample(abs(as.dist(p.1.tr.cor.matrix)), 1000000)), "Variance" = rep(c("0.1","0.5","1"), each = 1000000))
+
+pdf("Traitsim.var.dens.pdf", width = 4, height = 3)
+ggplot(df, aes(x=Correlation, colour=Variance)) + geom_density()+ theme(legend.position = c(.8,.7))
+dev.off()
+
+pdf("Traitsim.var.hist.pdf", width = 4, height = 3)
+ggplot(sig.all.2, aes(x=K, fill=Variance)) + geom_histogram(binwidth=.15, position="dodge") + theme(legend.position = c(.8,.7))#+ xlim(.5,2)
+dev.off()
+
+
+cdf <- ddply(df, "Variance", summarise, Correlation.mean=mean(Correlation))
+cdf
+
+pdf("TraitsimVarDensMean.pdf", width = 3, height = 3.5)
+ggplot(df, aes(x=Correlation, colour=Variance)) + geom_density(adjust = 1) + geom_vline(data=cdf, aes(xintercept=Correlation.mean,  colour=Variance), linetype="dashed", size=1) + xlim(0, 1)+ theme(legend.position = c(.8,.7)) + xlab("| Pearson Correlation (r) |")+ ylab("Density")
+dev.off()
+
+
+###########################################
+# they all look the same: check again:
+
+library(phytools)
+
+##read in BEF phylo from oliver
+my.tre = read.tree("BEF_China_Phy46.tre")
+
+rand.dat = matrix(NA, nrow = 46, ncol=100)
+
+##generate random data with variance 1
+for(i in 1:100){
+print(i)
+rand.dat[,i] = fastBM(my.tre, sig2=1)
+}
+
+
+##empty matrix to place blombergs k and pvalue for each simulated dataset
+rand.signal = matrix(NA, ncol=2, nrow=100)
+
+##measure blombergs k
+for(j in 1:100){
+print(j)
+tmp = phylosig(my.tre, rand.dat[,j], method="K",test=T)
+rand.signal[j,1] = tmp$K
+rand.signal[j,2] = tmp$P
+}
+
+######
+##empty matrix to put in random brownian motion evolved trait data for 46 species iterated 10k times
+
+rand.dat.1 = matrix(NA, nrow = 46, ncol=10000)
+
+##generate random data with variance 0.1
+for(i in 1:10000){
+print(i)
+rand.dat.1[,i] = fastBM(my.tre, sig2=0.1)
+}
+
+
+##empty matrix to place blombergs k and pvalue for each simulated dataset
+rand.signal.1 = matrix(NA, ncol=2, nrow=100)
+
+##measure blombergs k
+for(j in 1:100){
+print(j)
+tmp = phylosig(my.tre, rand.dat.1[,j], method="K",test=T)
+rand.signal.1[j,1] = tmp$K
+rand.signal.1[j,2] = tmp$P
+}
+
+plot(rand.signal[,1], rand.signal.1[,1])
+cor(rand.signal[,1], rand.signal.1[,1])
+
+##
+randsig <- rbind(rand.signal, rand.signal.1)
+
+sigvec <- rep(c(1,0.1), each = 100)
+
+sig.all.2 <- as.data.frame(cbind(sigvec, randsig))
+colnames(sig.all.2) <- c("Variance", "K", "P")
+sig.all.2[,1] <- as.factor(sig.all.2[,1])
+
+library(ggplot2)
+ggplot(sig.all.2, aes(x=K, colour=Variance)) + geom_density()
+ggplot(sig.all.2, aes(x=K, fill=Variance)) + geom_histogram(binwidth=.05, position="dodge")
+
+
+
+## 1) re-run signal tests on the server
+
+
+## easy: also check whether correlation between my previously defined PC.1 axes differs between within and among organs
+
+
+###################################
+# phyl.pca on morphology traits:
+?phyl.pca
+
+mod <- phyl.pca(befsignal$phy.46, scale(befsignal$traits.46[,c(1,2,26)]), method="lambda", mode="cov")
+mod$lambda
+#[1] 0.6490863
+summary(mod)
+biplot(mod)
+
+# note that the scores from such analysis are
+# does not work on fully binary data, because of singularities see motmot
+
+# compare to motmot:
+library(motmot)
+transformPhylo.ML(data.matrix(scale(befsignal$traits.46[,c(1,2,26)])), phy=multi2di(befsignal$phy.46), model="lambda")
+
+# 1.2) transpiration
+# 1.3) productivity
+# 1.4) elemental content
+# 1.5) defense 
+# 1.6) ALL
+# + 1.7) C & N only to compare with root C & N
+
+# 2) WOOD
+# 2.1) Rings and pores
+# 2.2) Vessels (incl. perforation plates)
+# 2.3) Rays
+# 2.4) Fibre (incl. wood density)
+# 2.5) Parenchym
+# 2.6) ALL
+
+# 3) ROOT
+# 1) leaf:
+# 1.1) defense
+
+
+# 2) 
+
+
+
+
+table.phylo4d <- function (x, treetype = c("phylogram", "cladogram"), symbol = c("circles", 
+    "squares", "colors"), repVar = 1:ncol(tdata(x, type = "tip")), 
+    center = TRUE, scale = TRUE, legend = TRUE, grid = TRUE, 
+    box = TRUE, show.tip.label = TRUE, show.node.label = TRUE, 
+    show.var.label = TRUE, ratio.tree = 1/3, font = 3, tip.label = tipLabels(x), 
+    var.label = colnames(tdata(x, type = "tip")), cex.symbol = 1, 
+    cex.label = 1, cex.legend = 1, pch = 20, col = heat.colors(100), 
+    coord.legend = NULL, ...) 
+{
+    if (is.character(chk <- checkPhylo4(x))) 
+        stop("bad phylo4d object: ", chk)
+    if (!require(ape)) 
+        stop("the ape package is required")
+    if (cex.label < 0.1) {
+        show.tip.label <- FALSE
+        show.node.label <- FALSE
+        show.var.label <- FALSE
+    }
+    cex <- par("cex")
+    symbol <- match.arg(symbol)
+    treetype <- match.arg(treetype)
+    SYMBSCALE <- 0.2
+    if (symbol == "colors") {
+        SYMBSCALE <- 0.05
+      }
+    tre <- suppressWarnings(as(x, "phylo"))
+    if (ncol(tdata(x, type = "tip")) == 0) {
+        plot.phylo(tre, type = treetype, direction = "rightwards",         
+                   show.tip.label = show.tip.label, show.node.label = show.node.label, 
+            cex = cex.label, no.margin = FALSE, x.lim = NULL, 
+            y.lim = NULL, ...)
+        return(invisible())
+    }
+    dat <- tdata(x, type = "tip")
+    dat <- dat[, repVar, drop = FALSE]
+    clas <- lapply(dat, class)
+    isNum <- sapply(clas, function(e) e %in% c("integer", "numeric"))
+    dat <- dat[, isNum, drop = FALSE]
+    var.label <- var.label[repVar]
+    var.label <- var.label[isNum]
+    E <- edges(x)
+    tips.ord <- E[, 2][!E[, 2] %in% E[, 1]]
+    dat <- dat[tips.ord, , FALSE]
+    tip.label <- tip.label[tips.ord]
+    dat <- as.data.frame(scale(dat, center = center, scale = scale))
+    temp <- var.label[which.max(nchar(var.label))]
+    lab.height <- strwidth(temp, units = "inches", cex = cex.label)
+    lab.height <- lab.height/par("pin")[1]
+    plotreg <- plotreg0 <- par("plt")
+    plotreg.width <- plotreg0[2] - plotreg0[1]
+    plotreg.height <- plotreg0[4] - plotreg0[3]
+    plotreg[2] <- plotreg[1] + (ratio.tree) * plotreg.width
+    plotreg[3] <- plotreg[3] + plotreg.height * ifelse(show.var.label, 
+        lab.height + 0.05, 0.05)
+    plotreg[4] <- plotreg[4] - plotreg.height * 0.05
+    par(plt = plotreg)
+    plotres <- plot.phylo(tre, type = treetype, direction = "rightwards", 
+        show.tip.label = FALSE, show.node.label = show.node.label, 
+        cex = cex.label, no.margin = FALSE, x.lim = NULL, y.lim = NULL, 
+        ...)
+    par(plt = plotreg0)
+    cur.usr.width <- par("usr")[2] - par("usr")[1]
+    usr.width <- cur.usr.width/ratio.tree
+    usr.height <- par("usr")[4] - par("usr")[3]
+    x.inset <- SYMBSCALE * cex.symbol * usr.width/par("pin")[1]
+    y.inset <- SYMBSCALE * cex.symbol * usr.height/par("pin")[2]
+    x.base <- plotres$x.lim[2] + x.inset
+    if (show.tip.label) {
+        temp <- tipLabels(x)[which.max(nchar(tipLabels(x)))]
+        lab.width <- strwidth(temp, units = "user", cex = cex.label)
+    }
+    else {
+        lab.width <- 0
+    }
+    xrange.data <- c(x.base, (par("usr")[1] + usr.width) - lab.width - 
+        2 * x.inset)
+    if (diff(xrange.data) < (x.inset * ncol(dat))) 
+        warning("There may not be enough room left to plot data; you may consider reducing ratio.tree or cex.label.")
+    x.grid <- seq(xrange.data[1], xrange.data[2], length = ncol(dat))
+    if (ncol(dat) == 1) {
+        x.grid <- mean(c(xrange.data[1], xrange.data[2]))
+    }
+    y.grid <- seq(plotres$y.lim[1], plotres$y.lim[2], length = plotres$Ntip)
+    temp <- expand.grid(y.grid, x.grid)
+    xy.data <- data.frame(x = temp[, 2], y = temp[, 1])
+    alldat <- cbind.data.frame(xy.data, unlist(dat))
+    if (box) {
+        box()
+    }
+    else {
+        box(col = "transparent")
+    }
+    if (grid) {
+        segments(x0 = x.grid, y0 = rep(min(y.grid), plotres$Ntip), 
+            x1 = x.grid, y1 = rep(max(y.grid), plotres$Ntip), 
+            col = "grey")
+        segments(x0 = rep(min(x.grid), plotres$Ntip), y0 = y.grid, 
+            x1 = rep(max(x.grid), plotres$Ntip), y1 = y.grid, 
+            col = "grey")
+    }
+    makeColors <- function(x, col) {
+        if (length(x) == 1) 
+            return(col[1])
+        nCol <- length(col)
+        res <- x - min(x)
+        res <- res/max(res)
+        res <- res * (nCol - 1) + 1
+        res <- round(res)
+        res[res > nCol] <- nCol
+        res[res < 1] <- 1
+        return(col[res])
+    }
+    plotaux <- function(x, y, var, symbol, cex) {
+        if (any(var[!is.na(var)] < 0)) {
+            usebw <- TRUE
+        }
+        else {
+            usebw <- FALSE
+        }
+        if (usebw) {
+            ispos <- var > 0
+            fg.col <- rep("black", length(var))
+            fg.col[ispos] <- "white"
+            bg.col <- rep("white", length(var))
+            bg.col[ispos] <- "black"
+            if (symbol == "squares") {
+                symbols(x = x, y = y, squares = abs(var), inches = SYMBSCALE * 
+                  cex, fg = fg.col, bg = bg.col, add = TRUE)
+            }
+            if (symbol == "circles") {
+                symbols(x = x, y = y, circles = abs(var), inches = SYMBSCALE * 
+                  cex, fg = fg.col, bg = bg.col, add = TRUE)
+            }
+            if (symbol == "colors") {
+                myCol <- makeColors(var, col)
+                points(x = x, y = y, pch = pch, cex = cex, col = myCol)
+            }
+        }
+        else {
+            if (symbol == "squares") {
+                symbols(x = x, y = y, squares = var, inches = SYMBSCALE * 
+                  cex, fg = "white", bg = "black", add = TRUE)
+            }
+            if (symbol == "circles") {
+                symbols(x = x, y = y, circles = var, inches = SYMBSCALE * 
+                  cex, fg = "white", bg = "black", add = TRUE)
+            }
+            if (symbol == "colors") {
+                myCol <- makeColors(var, col)
+                points(x = x, y = y, pch = pch, cex = cex, col = myCol)
+            }
+        }
+        if (any(is.na(var))) {
+            isNA <- is.na(var)
+            points(x[isNA], y[isNA], pch = 4, cex = cex.symbol)
+        }
+    }
+    plotaux(alldat[, 1], alldat[, 2], alldat[, 3], symbol, cex.symbol)
+    if (show.var.label) 
+        text(x = x.grid, y = rep(min(y.grid) - 1.5 * y.inset, 
+            ncol(dat)), lab = var.label, adj = 1, srt = 90, cex = 1.2)
+    if (show.tip.label) {
+        x.base <- xrange.data[2] + x.inset
+        text(x = rep(x.base, plotres$Ntip), y = 1:plotres$Ntip, 
+            lab = tip.label, font = font, cex = cex.label, pos = 4)
+    }
+    if (legend) {
+        addLegend <- function(x, y, z, cex.legend, cex.label, 
+            cex.symbol) {
+            z <- z * cex.legend
+            leg.values <- pretty(z, n = 4, min.n = 1)
+            temp <- length(leg.values)
+            if (temp > 4) {
+                leg.values <- leg.values[c(1, 2, temp - 1, temp)]
+            }
+            leg.txt <- as.character(leg.values)
+            if (symbol == "colors") {
+                sym.w <- strwidth("o", units = "user", cex = cex.symbol)
+                sym.w <- rep(sym.w, length(leg.values))
+                sym.h <- strheight("o", units = "user", cex = cex.symbol)
+                sym.h <- rep(sym.h, length(leg.values))
+            }
+            else {
+                usr.w <- (par("usr")[2] - par("usr")[1])/ratio.tree
+                usr.h <- par("usr")[4] - par("usr")[3]
+                sym.w <- usr.w * ((abs(leg.values)/max(abs(leg.values))) * 
+                  SYMBSCALE * cex.symbol * cex.legend)/par("pin")[1]
+                sym.h <- usr.h * (SYMBSCALE * cex.symbol * cex.legend)/par("pin")[2]
+            }
+            ann.w <- strwidth(leg.txt, units = "user", cex = cex.label * 
+                cex.legend)
+            ann.h <- strheight(leg.txt, units = "user", cex = cex.label * 
+                cex.legend)
+            space.w.sym <- sapply(1:(length(sym.w) - 1), function(i) sum(sym.w[c(i, 
+                i + 1)]))
+            space.w.ann <- sapply(1:(length(ann.w) - 1), function(i) sum(ann.w[c(i, 
+                i + 1)]))/2
+            temp <- cbind(space.w.sym, space.w.ann)
+            space.w <- apply(temp, 1, max)
+            if (symbol == "colors") {
+                space.h <- sym.h + ann.h
+            }
+            else {
+                space.w <- space.w + 0.01 * usr.w
+                space.h <- sym.h + ann.h + 0.01 * usr.h
+            }
+            ann.coordX <- c(x, x + cumsum(space.w)) + max(sym.w[1], 
+                ann.w[1]) + 0.01 * usr.w
+            ann.coordY <- y
+            sym.coordX <- ann.coordX
+            sym.coordY <- y + space.h
+            text(ann.coordX, ann.coordY, leg.txt, cex = cex.label * 
+                cex.legend)
+            plotaux(sym.coordX, sym.coordY, leg.values, symbol, 
+                cex.symbol * cex.legend)
+        }
+        if (!is.null(coord.legend)) {
+            x.leg <- coord.legend$x
+            y.leg <- coord.legend$y
+        }
+        else {
+            usr.w <- (par("usr")[2] - par("usr")[1])/ratio.tree
+            usr.h <- par("usr")[4] - par("usr")[3]
+            temp <- lab.height * usr.height/(1 - lab.height)
+            y.base <- par("usr")[3] - temp - y.inset
+            x.leg <- par("usr")[1] + 0.01 * usr.w
+            y.leg <- y.base
+        }
+        addLegend(x = x.leg, y = y.leg, z = alldat[, 3], cex.legend = cex.legend, 
+            cex.label = 1.7, cex.symbol = cex.symbol)
+    }
+    return(invisible())
+}
+
+
+#### scatterplot matrix:
+
+panel.cor <- function(x, y, method = "pearson", digits = 3, cex.cor = 1.2) {
+usr <- par("usr")
+on.exit(par(usr))
+par(usr = c(0, 1, 0, 1))
+r <- cor(x, y, method = method)
+ra <- cor.test(x, y, method = method)$p.value
+txt <- round(r, digits)
+sig <- 1
+prefix <- ""
+if (ra <= 0.1)
+prefix <- "."
+if (ra <= 0.05)
+prefix <- "*"
+if (ra <= 0.01)
+prefix <- "**"
+if (ra <= 0.001)
+prefix <- "***"
+if (ra <= 0.001)
+sig <- 2
+color <- 2
+if (r < 0)
+color <- 4
+# color <- 'gray10' if(r < 0) color <- 'gray50'
+txt <- paste(txt, prefix, sep = "\n")
+text(0.5, 0.5, txt, cex = cex.cor, font = sig, col = color)
+}
+## Put histograms on the diagonal
+panel.hist <- function(x, ...) {
+usr <- par("usr")
+on.exit(par(usr))
+par(usr = c(usr[1:2], 0, 1.5))
+h <- hist(x, plot = FALSE)
+breaks <- h$breaks
+nB <- length(breaks)
+y <- h$counts
+y <- y/max(y)
+rect(breaks[-nB], 0, breaks[-1], y, col = "cyan", ...)
+# rect(breaks[-nB], 0, breaks[-1], y, col='gray', ...)
+}
+
+# example:
+pairs(cbind(dune[, 10:15], dune.env[, c(1, 2, 5)]), lower.panel = panel.smooth,
+upper.panel = panel.cor, diag.panel = panel.hist)
+
+
+##
+
+plot.contMap <- function (x, ...) {
+    if (class(x) == "contMap") {
+        lims <- x$lims
+        x <- list(tree = x$tree, cols = x$cols)
+        class(x) <- "densityMap"
+    }
+    else stop("x should be an object of class 'contMap'")
+    H <- nodeHeights(x$tree)
+    if (hasArg(legend)) 
+        legend <- list(...)$legend
+    else legend <- NULL
+    if (hasArg(fsize)) 
+        fsize <- list(...)$fsize
+    else fsize <- NULL
+    if (hasArg(ftype)) 
+        ftype <- list(...)$ftype
+    else ftype <- NULL
+    if (hasArg(outline)) 
+        outline <- list(...)$outline
+    else outline <- TRUE
+    if (hasArg(lwd)) 
+        lwd <- list(...)$lwd
+    else lwd <- 4
+    if (hasArg(sig)) 
+        sig <- list(...)$sig
+    else sig <- 3
+    if (hasArg(type)) 
+        type <- list(...)$type
+    else type <- "phylogram"
+    if (hasArg(mar)) 
+        mar <- list(...)$mar
+    else mar <- rep(0.3, 4)
+    if (hasArg(direction)) 
+        direction <- list(...)$direction
+    else direction <- "rightwards"
+    if (is.null(legend)) 
+        legend <- 0.5 * max(H)
+    if (is.null(fsize)) 
+        fsize <- c(1, 1)
+    if (length(fsize) == 1) 
+        fsize <- rep(fsize, 2)
+    if (is.null(ftype)) 
+        ftype <- c("i", "reg")
+    if (length(ftype) == 1) 
+        ftype <- c(ftype, "reg")
+    leg.txt <- c(round(lims[1], sig), "test", round(lims[2], 
+        sig))
+    plot(x, fsize = fsize, ftype = ftype, lwd = lwd, legend = legend, 
+        outline = outline, leg.txt = "adfasdf", type = type, mar = mar, 
+        direction = direction)
+}
+
+#########
+
+#   # Generates either a distogram or an autocorrelogram based on Hardy, O.
+#J., and S. Pavoine. 2012. Evolution 66:2614-2621 and Diniz-Filho, J. A. F.
+#2001. Evolution 55:1104-1109
+
+# code is modified from Hardy and Pavoine 2012
+
+# includes a comparison to Brownian motion model (simulations scaled by the
+#original data) and to a case of no phylogenetic structure (permutations of
+#the original data)
+
+# Input is data matrix (for multivariate data) or vector (for univariate
+#data) and tree as a phylo object
+
+# dcfun specifies whether the Euclidean distance ("ED") is calculated or
+#Moran's I ("IM")
+
+# nsims specifies the number of simulations for the BM simulations and permutations
+
+# default (plot=TRUE) generates the plot itself (either distogram or autocorrelogram), otherwise you can set plot=FALSE and plot it yourself based on the output
+
+# output is a matrix in which every row is a class of patristic distance over which the distance/similarity is averaged. columns are the mean patristic distance for that class ("pdcm"), the observed value of distance/similarity ("obs"), the mean ("Pm"), lower ("Pl"), and upper ("Pu") bounds of the 95% CI of permutations, and the mean ("BMm"), lower ("BMl"), and upper ("BMu") bounds of the 95% CI of BM simulations
+
+
+require(abind); require(geiger)
+
+X = randtraits
+tree = randtree
+nsims = 100
+dcfun = "IM"
+
+distcor <- function(X, tree, dcfun=c("ED","IM"), nsims = 100, plot=TRUE) {
+
+X <- as.matrix(X)
+
+pd <- cophenetic.phylo(tree)
+
+pd <- pd/max(pd)
+
+class <-c(0, (1:10)/10)
+
+if (dcfun=="ED") class <- class^2
+
+pdcm <- c()
+
+for(j in 2:length(class)) {pdcm <- c(pdcm, mean(pd[pd>class[j-1] & pd<=class[j]]))}
+
+XP <- array(apply(array(X, dim=c(nrow(X),ncol(X),nsims)), 3, function(X){X[sample(1:nrow(X),nrow(X)),]}), dim=c(nrow(X),ncol(X),nsims)) #permutations of species to simulate no phylogenetic structure
+
+XS <- sim.char(tree, var(X), nsim=nsims) # simulations of BM
+
+XX <- abind(XP, XS, X, along=3)
+
+if (dcfun=="ED") dfun <- function(X){as.matrix(dist(X))} else if (dcfun==
+"IM") dfun <- function(X){X%*%t(X)/sum(diag(var(X))) + 1/(nrow(X)-1)}
+
+cM0 <- c()
+
+for (h in 1:dim(XX)[3]) {
+
+ X <- as.matrix(XX[,,h])
+
+ D <- dfun(X)
+
+ cm <- c()
+
+ for(j in 2:length(class)) {cm <- c(cm, mean(D[pd>class[j-1] & pd<=class[j
+]]))}
+
+ cM0 <- cbind(cM0, cm)
+
+ }
+
+na <- which(is.na(pdcm))
+
+cMP <- cM0[-na,1:nsims]
+
+cMS <- cM0[-na,(nsims+1):(nsims*2)]
+
+cM <- cbind("pdcm"=pdcm[-na], "obs"=cM0[-na,ncol(cM0)], "Pm"=rowMeans(cMP),
+"Pl"=apply(cMP, 1, quantile, 0.025), "Pu"=apply(cMP, 1, quantile, 0.975),
+"BMm"=rowMeans(cMS), "BMl"=apply(cMS, 1, quantile, 0.025), "BMu"=apply(cMS,
+1, quantile, 0.975))
+
+if (plot==TRUE) {
+
+ ltys <- c(NA,1,3,3,3,1,1,1)
+
+ cols <- c(NA,"Black","black","grey","grey","black","grey","grey")
+
+ if(dcfun=="ED") {
+
+ cM[,"pdcm"] <- sqrt(cM[,"pdcm"])
+
+ legpos <- "bottomright"
+
+ yttl <- "Euclidean distance"
+
+ xttl <- "Square root of patristic distance"
+
+ }
+
+ else if(dcfun=="IM") {
+
+ legpos <- "topright"
+
+ yttl <- "Moran's I (trait similarity)"
+
+ xttl <- "patristic distance"
+
+ }
+
+ plot(cM[,"pdcm"], cM[,"obs"], ylim=c(min(0,min(cM[,-1])),max(cM[,-1])), pch
+=19, xlab=xttl, ylab=yttl)
+
+ for (j in 2:ncol(cM)) {lines(cM[,"pdcm"], cM[,j], lty=ltys[j], col=cols[j
+])}
+
+ legend(legpos, legend=c("Observed","Permutated","Brownian"), cex=0.8, lty
+=c(1,3,1), pch=c(19,NA,NA))
+
+ }
+
+cM
+
+}
+
+# test the function
+
+distcor(X=befsignal$traits.46.sort[, 25], tree = befsignal$phy.46, dcfun="IM", nsims = 100, plot=T)
+   
+X = as.matrix(scale(befsignal$traits.46.sort[,c(25:27)])) 
+tree = multi2di(befsignal$phy.46)
+
+
+@
+
+%\bibliographystyle{apa}
+\bibliography{/home/oliver/Dokumente/PhD/Literatur/Bibfile/dislit}
+
+
+\end{document}

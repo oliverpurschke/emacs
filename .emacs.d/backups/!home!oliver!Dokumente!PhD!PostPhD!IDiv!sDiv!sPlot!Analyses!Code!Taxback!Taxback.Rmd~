@@ -1,0 +1,34 @@
+---
+title: "Taxonomic backbone for sPlot 2.1 and TRY 3.0"
+author: Oliver Purschke
+keywords: tech
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+disqusIdentifier: 2c5a0040
+tags:
+- tech
+- blog
+- rmd
+- blogdown
+- hugo
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    highlight: zenburn
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: united
+---
+
+# Taxonomic standardization procedure, step by step, new:
+## Combine unique names lists of species in sPlot 2.0 and TRY 3.0:
+### Read in [sPlot](https://www.idiv.de/sdiv/working_groups/wg_pool/splot/splot_database.html) species data
+
+```{r }
+
+path.sPlot <- "/home/oliver/Dokumente/PhD/PostPhD/IDiv/sDiv/sPlot/Analyses/Data/Species/
+sPlot/sPlot_14_04_2015/"
+
+```
+Note, `sPlot_14_4_2015_species` no longer exists, but will be used for documentation purposes here. NOTE, this is the version of splot to generate the backbone for to match splot 2.0 to try 3.0. In the following, I will describe the workflow for generating a backbone for this two versions of the the data bases. The backbone use used in the workshop sPlot.III also contains the 7,701 additional (and/or different) species names in sPlot 2.1 (sPlot_2015_07_19). Because prior to the workshop, some ad-hoc standardization needed to be done.

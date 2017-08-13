@@ -1,0 +1,86 @@
+find-file
+ls
+find-file Purschke
+ls -lth
+find-file dfg_logo_blau.jpg
+ls
+1+1
+pkill 
+pkill --help
+ls
+cd ..
+cd ..
+cd ..
+cd ..
+cd /
+ls
+ls bin
+ls
+python
+ls
+htop
+elpy-rpc-python-command
+echo -e '\033[0;31mhello\033[1;0m'
+ipython
+ls -lth
+htop
+top
+htop
+cd ..
+cd /
+ls
+ls -lth
+ls
+sudo apt-get update
+sudo apt-get upgrade
+pkill mend
+mendeley-desktop
+mendeleydesktop
+ls -lth
+cd /home/oliver/Dokumente/PhD/PostPhD/Application/DataScience/PrepFromLanna/DataScience
+ls
+ls
+git clone https://github.com/jakevdp/PythonDataScienceHandbook
+ls
+cd PythonDataScienceHandbook/
+ls
+cd notebooks/
+ls
+source activate data_science
+source activate data_science
+jupyter notebook
+pkill mend
+mendeleydesktop
+pkill mend
+mendeleydesktop
+sudo add-apt-repository ppa:webupd8team/java
+sudo apt-get update
+sudo apt-get install oracle-java8-installer
+sudo apt-get install openjfx
+sudo apt-get install libreoffice-java-common
+sudo apt-get update
+sudo apt-get upgrade
+    sudo apt-get autoremove
+    sudo apt-get autoclean
+sudo apt-get clean
+sudo apt-get autoremove
+sudo apt-get autoclean
+head /home/oliver/Dokumente/PhD/PostPhD/IDiv/sDiv/sPlot/Analyses/Data/Species/sPlot/sPlot_17_10_2016/sPlot_species.csv
+tail /home/oliver/Dokumente/PhD/PostPhD/IDiv/sDiv/sPlot/Analyses/Data/Species/sPlot/sPlot_17_10_2016/sPlot_species.csv
+tail -5 /home/oliver/Dokumente/PhD/PostPhD/IDiv/sDiv/sPlot/Analyses/Data/Species/sPlot/sPlot_17_10_2016/sPlot_species.csv
+awk 'FNR <= 10' /home/oliver/Dokumente/PhD/PostPhD/IDiv/sDiv/sPlot/Analyses/Data/Species/sPlot/sPlot_17_10_2016/sPlot_species.csv
+perl -ne'1..10 and print' /home/oliver/Dokumente/PhD/PostPhD/IDiv/sDiv/sPlot/Analyses/Data/Species/sPlot/sPlot_17_10_2016/sPlot_species.csv
+R head /home/oliver/Dokumente/PhD/PostPhD/IDiv/sDiv/sPlot/Analyses/Data/Species/sPlot/sPlot_17_10_2016/sPlot_species.csv
+ls
+cd ..
+ls
+cd ls
+cd ..
+cd .
+cd..
+cd ..
+ls
+source activate data_sciece
+source activate data_science
+cd /home/oliver/Dokumente/PhD/PostPhD/Application/DataScience/PrepFromLanna
+source activate data_science
