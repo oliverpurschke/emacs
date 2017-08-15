@@ -1,4 +1,0 @@
-Describe workflow and calculate stats on the fly (start at line 6871 in sPlot2.Rnw):
-
-1) select the unique uncorrected taxa names in sPlot 2.1 and
-! check which names in sPlot 2.1 are not in sPlot 2.1 backbone -> tag in extra column
