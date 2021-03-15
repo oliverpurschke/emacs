@@ -315,5 +315,5 @@
 (setq org-todo-keywords
       '((sequence "TODO" "IN-PROGRESS" "WAITING" "DONE")))
 
-;;; line wrap:
+;;; line wrap (new changes 15.03.2021):
 (add-hook 'text-mode-hook 'turn-on-visual-line-mode)
